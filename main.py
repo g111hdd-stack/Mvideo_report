@@ -10,7 +10,6 @@ from web_driver.mvideo_api import (
     parse_mvideo_catalog_products,
     parse_mvideo_adverts,
     parse_mvideo_advert_statistics,
-    parse_mvideo_stocks,
 )
 
 KEEP_BROWSER_OPEN = False
@@ -130,33 +129,6 @@ def main():
                         f"{market.name_company}: всего строк статистики сохранено: "
                         f"{len(all_statistics)}"
                     )
-
-                    stock_data = api.get_mvideo_stock_movements()
-
-                    if stock_data is not None:
-                        articles_by_sku = db_arris.get_articles_by_sku(
-                            client_id=market.client_id,
-                        )
-
-                        stocks = parse_mvideo_stocks(
-                            data=stock_data,
-                            client_id=market.client_id,
-                            articles_by_sku=articles_by_sku,
-                        )
-
-                        logger.info(
-                            f"{market.name_company}: распарсено строк остатков: {len(stocks)}"
-                        )
-
-                        db_arris.add_mvideo_stocks(stocks)
-
-                        logger.info(
-                            f"{market.name_company}: остатки сохранены в БД"
-                        )
-                    else:
-                        logger.error(
-                            f"{market.name_company}: остатки не получены"
-                        )
 
                 # === Скачивание billing-отчётов за текущий месяц ===
                 reports = MvideoReports(driver, db_arris=db_arris)

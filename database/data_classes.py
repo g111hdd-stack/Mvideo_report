@@ -47,12 +47,10 @@ class DataMvideoStock:
     date: date
     client_id: str
     sku: str
-    vendor_code: Optional[str]
     warehouse: Optional[str]
     city: Optional[str]
     quantity_warehouse: Optional[int]
-    quantity_to_client: Optional[int]
-    quantity_from_client: Optional[int]
+    cost: Optional[float]
 
 
 @dataclass
@@ -74,12 +72,4 @@ class DataMvideoAcquiring:
     sum: Optional[float]
     total_sum: Optional[float]
     transaction_type: Optional[str]
-    cost: Optional[float]
-
-
-@dataclass
-class DataMvideoStorage:
-    date: date
-    client_id: str
-    sku: str
     cost: Optional[float]

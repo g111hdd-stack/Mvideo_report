@@ -205,14 +205,10 @@ class MvideoStock(Base):
     )
 
     sku = Column(Text, nullable=False)
-    vendor_code = Column(String(length=255), nullable=True)
     warehouse = Column(String(length=255), nullable=True)
     city = Column(String(length=255), nullable=True)
-
     quantity_warehouse = Column(BigInteger, nullable=True)
-    quantity_to_client = Column(BigInteger, nullable=True)
-    quantity_from_client = Column(BigInteger, nullable=True)
-
+    cost = Column(Float, nullable=True)
 
     __table_args__ = (
         UniqueConstraint(
@@ -290,33 +286,6 @@ class MvideoAcquiring(Base):
         ),
     )
 
-class MvideoStorage(Base):
-    __tablename__ = 'mv_storage'
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-
-    date = Column(Date, nullable=False)
-    client_id = Column(
-        String(length=255),
-        ForeignKey(
-            'clients.client_id',
-            name='mv_storage_clients_fk',
-            ondelete='CASCADE',
-            onupdate='CASCADE',
-        ),
-        nullable=False,
-    )
-    sku = Column(String(length=255), nullable=False)
-    cost = Column(Float, nullable=True)
-
-    __table_args__ = (
-        UniqueConstraint(
-            'date',
-            'client_id',
-            'sku',
-            name='mv_storage_unique',
-        ),
-    )
 
 
 

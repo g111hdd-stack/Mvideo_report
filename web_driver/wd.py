@@ -2,7 +2,7 @@ import os
 import time
 import random
 
-from typing import Type, Optional, Tuple
+from typing import Optional, Tuple
 
 from database.models import Market
 from database.db import DbConnection

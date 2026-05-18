@@ -4,7 +4,7 @@ import requests
 from playwright.sync_api import TimeoutError as PwTimeoutError
 from datetime import datetime, timedelta
 
-from database.data_classes import (DataMvideoCardProduct, DataMvideoAdvert, DataMvideoAdvertStatistic, DataMvideoStock,)
+from database.data_classes import (DataMvideoCardProduct, DataMvideoAdvert, DataMvideoAdvertStatistic,)
 from log_api.log import logger
 
 
@@ -110,20 +110,14 @@ class MvideoApi:
         )
 
     def get_mvideo_campaign_stats_yesterday(self, campaign_id: str):
-        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        today = datetime.now().date()
+        to_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")    # вчера
+        from_date = (today - timedelta(days=7)).strftime("%Y-%m-%d")  # 7 дней назад
         return self._api(
             "GET", f"{self.BASE}/seller-api/v1/campaigns/{campaign_id}/stats",
             referer=f"{self.BASE}/mpa/marketing/campaigns",
-            params={"from_date": yesterday, "to_date": yesterday},
+            params={"from_date": from_date, "to_date": to_date},
         )
-
-    def get_mvideo_stock_movements(self, page: int = 0, size: int = 1000):
-        return self._api(
-            "POST", f"{self.BASE}/api/productmovements/search",
-            referer=f"{self.BASE}/mpa/products/productmovements",
-            json_body={"pageable": {"page": page, "size": size, "sort": []}},
-        )
-
 
 # === Хелперы для парсеров ===
 
@@ -258,44 +252,5 @@ def parse_mvideo_advert_statistics(
     return statistics
 
 
-def parse_mvideo_stocks(
-        data: dict | list,
-        client_id: str,
-        stock_date=None,
-        articles_by_sku: dict[str, str] | None = None,
-) -> list[DataMvideoStock]:
-    if stock_date is None:
-        stock_date = datetime.now().date()
-
-    if isinstance(data, dict):
-        items = data.get("content") or []
-    elif isinstance(data, list):
-        items = data
-    else:
-        return []
-
-    stocks: list[DataMvideoStock] = []
-
-    for item in items:
-        sku = item.get("zmaterial")
-        if sku is None:
-            continue
-
-        sku_str = str(sku)
-        vendor_code = articles_by_sku.get(sku_str) if articles_by_sku else None
-
-        stocks.append(DataMvideoStock(
-            date=stock_date,
-            client_id=client_id,
-            sku=sku_str,
-            vendor_code=vendor_code,
-            warehouse=_str(item.get("zplant")),
-            city=_str(item.get("city")),
-            quantity_warehouse=_int(item.get("qty")),
-            quantity_to_client=0,
-            quantity_from_client=0,
-        ))
-
-    return stocks
 
 

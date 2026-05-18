@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, date
 from database.data_classes import (
     DataMvideoDistribution,
     DataMvideoAcquiring,
-    DataMvideoStorage,
+    DataMvideoStock,
 )
 from log_api.log import logger, get_moscow_time
 
@@ -20,7 +20,7 @@ SERVICE_TYPES: list[tuple[str, str, str]] = [
     ("DISTRIBUTION", "BILLING_SUPPLIER_DISTRIBUTION", "distribution.xlsx"),
     ("STORAGE",      "BILLING_SUPPLIER_STORAGE",      "storage.xlsx"),
     ("ACQUIRING",    "BILLING_SUPPLIER_ACQUIRING",    "acquiring.xlsx"),
-    # ("COMMISSION",   "BILLING_SUPPLIER_COMMISSION",   "commission.xlsx"),
+    ("COMMISSION",   "BILLING_SUPPLIER_COMMISSION",   "commission.xlsx"),
 ]
 
 
@@ -102,7 +102,7 @@ class MvideoReports:
             max_wait_s: int = 360,
     ) -> list[str]:
         """
-        Скачивает billing-отчёты (distribution, storage, acquiring, commission)
+        Скачивает billing-отчёты (distribution, storage, acquiring)
         для всех периодов со статусом ACCUMULATING.
 
         Алгоритм:
@@ -206,16 +206,6 @@ class MvideoReports:
                     except Exception as e:
                         self._error(f"ошибка парсинга/записи acquiring: {e}")
 
-                # STORAGE — парсим услугу хранения и пишем в БД
-                if service_type == "STORAGE" and self.db_arris is not None:
-                    try:
-                        period_date = self._to_date(start_date) or get_moscow_time().date()
-                        storage_rows = self._parse_storage_xlsx(path, period_date)
-                        if storage_rows:
-                            self.db_arris.add_mvideo_storages(storage_rows)
-                    except Exception as e:
-                        self._error(f"ошибка парсинга/записи storage: {e}")
-
         return saved
 
     # === локальный парсинг уже скачанных файлов ===
@@ -255,7 +245,7 @@ class MvideoReports:
         Ищет файлы по подстроке в имени (case-insensitive):
             - 'Распределение'  или 'distribution' → mv_distribution
             - 'Эквайринг'      или 'acquiring'    → mv_acquiring
-            - 'Услуга хранения'/'Хранение' или 'storage' → mv_storage (использует period_date)
+            - 'Услуга хранения'/'Хранение' или 'storage' → mv_stocks
 
         Если по подстроке найдено несколько файлов — берётся первый, остальные
         логируются как предупреждение. Если файлов нет — соответствующий
@@ -321,9 +311,9 @@ class MvideoReports:
         stor_path = self._find_local_report(directory, all_xlsx, "storage")
         if stor_path is not None:
             try:
-                rows = self._parse_storage_xlsx(stor_path, period_date)
+                rows = self._parse_storage_xlsx(stor_path)
                 if rows:
-                    self.db_arris.add_mvideo_storages(rows)
+                    self.db_arris.add_mvideo_stocks(rows)
                 result["storage"] = len(rows)
                 self._info(f"storage: записано строк {len(rows)}")
             except Exception as e:
@@ -620,11 +610,6 @@ class MvideoReports:
         "cost":             "Сумма к оплате с учетом тарификации, руб. с учетом НДС",
     }
 
-    # Storage (услуга хранения): поле → точное название колонки в xlsx
-    _COL_NAMES_STORAGE: dict[str, str] = {
-        "sku":  "Код товара",
-        "cost": "Сумма по тарифу, руб., с учетом НДС",
-    }
 
     def _parse_distribution_xlsx(self, file_path: str) -> list[DataMvideoDistribution]:
         """
@@ -742,65 +727,167 @@ class MvideoReports:
         self._info(f"acquiring: распарсено строк: {len(rows_data)}")
         return rows_data
 
-    def _parse_storage_xlsx(
-            self,
-            file_path: str,
-            period_date: date,
-    ) -> list[DataMvideoStorage]:
+    def _parse_storage_xlsx(self, file_path: str) -> list[DataMvideoStock]:
         """
-        Парсит лист 'Детализированный отчет' в xlsx-отчёте storage
-        (услуга хранения). Дата чека в этом отчёте отсутствует —
-        используем period_date из периода ACCUMULATING.
+        Парсит xlsx 'Услуга хранения' с ежедневными остатками.
+
+        Структура отчёта:
+            - 'Код поставщика'        → client_id
+            - 'Код товара'            → sku
+            - 'Макрорегион'           → 'С032 - Ростов-на-Дону' → warehouse=С032, city=Ростов-на-Дону
+            - даты в заголовках       → 01.май, 02.май, ... (ячейка содержит datetime)
+            - значение на пересечении → quantity_warehouse
+
+        Каждая пара (SKU × день) с ненулевым количеством → одна строка в mv_stocks.
+        Читает лист 'Детализированный отчет'.
         """
         df = self._read_detail_sheet(file_path, label="storage")
         if df is None:
             return []
 
-        header_row, col_map = self._find_headers_in_df(
-            df, self._COL_NAMES_STORAGE, required_fields=("sku",),
-        )
-        if header_row is None:
+        header_row, fixed_cols, date_cols = self._find_storage_headers(df)
+        if header_row is None or "sku" not in fixed_cols:
             self._error(
-                f"storage: на листе '{self.DETAIL_SHEET_NAME}' "
-                f"не найдены заголовки (минимум sku)"
+                "storage: не найдена строка заголовков "
+                "(нужны минимум 'Код товара' и хотя бы одна дата)"
             )
             return []
 
-        self._log_missing_columns("storage", self._COL_NAMES_STORAGE, col_map)
         self._info(
-            f"storage: лист '{self.DETAIL_SHEET_NAME}', "
-            f"заголовки на строке {header_row + 1}, "
-            f"найдено колонок: {len(col_map)}/{len(self._COL_NAMES_STORAGE)}"
+            f"storage: заголовки на строке {header_row + 1}, "
+            f"дат: {len(date_cols)}, фикс. колонок: {sorted(fixed_cols)}"
         )
 
-        rows_data: list[DataMvideoStorage] = []
+        rows_data: list[DataMvideoStock] = []
 
         for row_idx in range(header_row + 1, len(df)):
             row = df.iloc[row_idx]
 
-            def cell(field: str):
-                return self._cell_from_row(row, col_map.get(field))
-
-            sku_val = cell("sku")
+            sku_val = self._cell_from_row(row, fixed_cols.get("sku"))
             if sku_val is None:
                 continue
             sku = str(sku_val).strip()
             if not sku:
                 continue
 
-            cost = self._to_float(cell("cost"))
-            if cost is None or cost == 0:
-                continue
+            # client_id — из колонки 'Код поставщика', либо из self.market как fallback
+            client_id_val = self._cell_from_row(row, fixed_cols.get("client_id"))
+            if client_id_val is not None and str(client_id_val).strip():
+                client_id = str(client_id_val).strip()
+            else:
+                client_id = self.market.client_id
 
-            rows_data.append(DataMvideoStorage(
-                date=period_date,
-                client_id=self.market.client_id,
-                sku=sku,
-                cost=cost,
-            ))
+            macroregion_val = self._cell_from_row(row, fixed_cols.get("macroregion"))
+            warehouse, city = self._split_macroregion(macroregion_val)
+
+            tariff_rate = self._to_float(
+                self._cell_from_row(row, fixed_cols.get("tariff_rate"))
+            )
+
+            for d, col_idx in date_cols.items():
+                qty = self._to_int(self._cell_from_row(row, col_idx))
+                if qty is None or qty == 0:
+                    continue
+
+                cost = qty * tariff_rate if tariff_rate is not None else None
+
+                rows_data.append(DataMvideoStock(
+                    date=d,
+                    client_id=client_id,
+                    sku=sku,
+                    warehouse=warehouse,
+                    city=city,
+                    quantity_warehouse=qty,
+                    cost=cost,
+                ))
 
         self._info(f"storage: распарсено строк: {len(rows_data)}")
         return rows_data
+
+    def _find_storage_headers(self, df) -> tuple[int | None, dict[str, int], dict[date, int]]:
+        """
+        Ищет строку заголовков отчёта 'Услуга хранения'.
+
+        Возвращает кортеж (row_idx, fixed_cols, date_cols), где:
+            fixed_cols = {'client_id': idx, 'sku': idx, 'macroregion': idx}
+            date_cols  = {date(2026, 5, 1): idx, date(2026, 5, 2): idx, ...}
+
+        Строка считается заголовочной, если в ней найден хотя бы 'Код товара'.
+        """
+        needed = {
+            "Код поставщика": "client_id",
+            "Код товара":     "sku",
+            "Макрорегион":    "macroregion",
+            "Ставка по тарифу за 1 штуку товара в день, руб., с учетом НДС": "tariff_rate",
+        }
+        needed_norm = {self._normalize_header(k): v for k, v in needed.items()}
+
+        max_scan = min(30, len(df))
+        for row_idx in range(max_scan):
+            row = df.iloc[row_idx]
+            fixed_cols: dict[str, int] = {}
+            date_cols: dict[date, int] = {}
+            for col_idx in range(len(row)):
+                cell = row.iloc[col_idx]
+                # Сначала пробуем как дату
+                d = self._try_extract_date(cell)
+                if d is not None:
+                    if d not in date_cols:
+                        date_cols[d] = col_idx
+                    continue
+                # Затем как фиксированное имя
+                if isinstance(cell, str):
+                    norm = self._normalize_header(cell)
+                    field = needed_norm.get(norm)
+                    if field is not None and field not in fixed_cols:
+                        fixed_cols[field] = col_idx
+            if "sku" in fixed_cols and date_cols:
+                return row_idx, fixed_cols, date_cols
+        return None, {}, {}
+
+    @staticmethod
+    def _try_extract_date(value) -> date | None:
+        """Пытается извлечь date из ячейки (Timestamp / datetime / date / 'DD.MM.YYYY')."""
+        if value is None:
+            return None
+        # pandas Timestamp
+        if hasattr(value, "to_pydatetime"):
+            try:
+                return value.to_pydatetime().date()
+            except Exception:
+                pass
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if isinstance(value, str):
+            s = value.strip()
+            try:
+                return datetime.strptime(s, "%d.%m.%Y").date()
+            except ValueError:
+                pass
+        return None
+
+    @staticmethod
+    def _split_macroregion(value) -> tuple[str | None, str | None]:
+        """
+        Делит строку макрорегиона вида 'С032 - Ростов-на-Дону' на (warehouse, city).
+        Возвращает (None, None) если значение пустое/невалидное.
+        Если разделителя нет — кладёт всю строку в warehouse, city=None.
+        """
+        if value is None:
+            return None, None
+        text = str(value).strip()
+        if not text:
+            return None, None
+        # Делим максимум на 2 части по первому дефису
+        # (название города может содержать дефис, например 'Ростов-на-Дону')
+        parts = [p.strip() for p in text.split("-", 1)]
+        if len(parts) == 2:
+            warehouse = parts[0] or None
+            city = parts[1] or None
+            return warehouse, city
+        return text, None
 
     def _read_detail_sheet(self, file_path: str, label: str):
         """

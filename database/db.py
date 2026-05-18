@@ -20,7 +20,6 @@ from database.data_classes import (
     DataMvideoStock,
     DataMvideoDistribution,
     DataMvideoAcquiring,
-    DataMvideoStorage,
 )
 
 
@@ -128,14 +127,6 @@ class DbConnection:
 
         logger.info("Таблица mv_acquiring успешно создана")
 
-    @retry_on_exception()
-    def create_mv_storage(self) -> None:
-        MvideoStorage.__table__.create(
-            bind=self.engine,
-            checkfirst=True,
-        )
-
-        logger.info("Таблица mv_storage успешно создана")
 
     # === Удаление таблиц ===
 
@@ -193,14 +184,6 @@ class DbConnection:
 
         logger.info("Таблица mv_acquiring успешно удалена")
 
-    @retry_on_exception()
-    def drop_mv_storage(self) -> None:
-        MvideoStorage.__table__.drop(
-            bind=self.engine,
-            checkfirst=True,
-        )
-
-        logger.info("Таблица mv_storage успешно удалена")
 
     @retry_on_exception()
     def get_markets(self) -> list[Market]:
@@ -211,36 +194,6 @@ class DbConnection:
             .all()
         )
         return markets
-
-    @retry_on_exception()
-    def get_mvideo_campaign_ids(
-            self,
-            client_id: str,
-    ) -> list[int]:
-        campaigns = (
-            self.session
-            .query(MvideoAdvertTable.campaign_id)
-            .filter(MvideoAdvertTable.client_id == client_id)
-            .distinct()
-            .all()
-        )
-
-        return [row.campaign_id for row in campaigns]
-
-    @retry_on_exception()
-    def get_articles_by_sku(
-            self,
-            client_id: str,
-    ) -> dict[str, str]:
-        rows = (
-            self.session
-            .query(MvideoCardProduct.sku, MvideoCardProduct.vendor_code)
-            .filter(MvideoCardProduct.client_id == client_id)
-            .filter(MvideoCardProduct.vendor_code.isnot(None))
-            .all()
-        )
-        return {row.sku: row.vendor_code for row in rows}
-
 
     @retry_on_exception()
     def get_phone_message(self, user: str, phone: str, marketplace: str) -> str:
@@ -399,58 +352,21 @@ class DbConnection:
             logger.info("Нет остатков МВидео для записи в базу")
             return
 
-        grouped: dict[tuple, DataMvideoStock] = {}
-
-        for stock in stocks:
-            key = (
-                stock.date,
-                stock.client_id,
-                stock.sku,
-                stock.warehouse,
-            )
-
-            if key not in grouped:
-                grouped[key] = stock
-                continue
-
-            old_stock = grouped[key]
-
-            old_stock.quantity_warehouse = (
-                    (old_stock.quantity_warehouse or 0)
-                    + (stock.quantity_warehouse or 0)
-            )
-
-            old_stock.quantity_to_client = (
-                    (old_stock.quantity_to_client or 0)
-                    + (stock.quantity_to_client or 0)
-            )
-
-            old_stock.quantity_from_client = (
-                    (old_stock.quantity_from_client or 0)
-                    + (stock.quantity_from_client or 0)
-            )
-
-        stocks = list(grouped.values())
-
         for stock in stocks:
             stmt = insert(MvideoStock).values(
                 date=stock.date,
                 client_id=stock.client_id,
                 sku=stock.sku,
-                vendor_code=stock.vendor_code,
                 warehouse=stock.warehouse,
                 city=stock.city,
                 quantity_warehouse=stock.quantity_warehouse,
-                quantity_to_client=stock.quantity_to_client,
-                quantity_from_client=stock.quantity_from_client,
+                cost=stock.cost,
             ).on_conflict_do_update(
                 index_elements=["date", "client_id", "sku", "warehouse"],
                 set_={
-                    "vendor_code": stock.vendor_code,
                     "city": stock.city,
                     "quantity_warehouse": stock.quantity_warehouse,
-                    "quantity_to_client": stock.quantity_to_client,
-                    "quantity_from_client": stock.quantity_from_client,
+                    "cost": stock.cost,
                 },
             )
             self.session.execute(stmt)
@@ -530,31 +446,3 @@ class DbConnection:
             f"Успешно добавлено/обновлено строк acquiring-отчёта: {len(rows)}"
         )
 
-    @retry_on_exception()
-    def add_mvideo_storages(
-            self,
-            rows: list[DataMvideoStorage],
-    ) -> None:
-        if not rows:
-            logger.info("Нет строк storage-отчёта для записи в базу")
-            return
-
-        for row in rows:
-            stmt = insert(MvideoStorage).values(
-                date=row.date,
-                client_id=row.client_id,
-                sku=row.sku,
-                cost=row.cost,
-            ).on_conflict_do_update(
-                index_elements=["date", "client_id", "sku"],
-                set_={
-                    "cost": row.cost,
-                },
-            )
-            self.session.execute(stmt)
-
-        self.session.commit()
-
-        logger.info(
-            f"Успешно добавлено/обновлено строк storage-отчёта: {len(rows)}"
-        )
