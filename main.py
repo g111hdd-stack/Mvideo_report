@@ -35,7 +35,7 @@ def main():
 
         markets = db_admin.get_markets()
 
-        for market in markets[1:2]:
+        for market in markets:
             # if market.name_company != "Мкртчян Х.М.":
             #     continue
             driver = None
@@ -58,81 +58,81 @@ def main():
 
                 logger.info(f"Авторизация завершена: {market.name_company}")
 
-                # === Сбор данных через API ===
-                api = MvideoApi(driver)
-
-                # Получаем каталог товаров (со всех страниц)
-                data = api.get_all_catalog_products()
-
-                if data is not None:
-                    logger.info(f"{market.name_company}: всего товаров: {data.get('totalElements')}")
-
-                    products = parse_mvideo_catalog_products(
-                        data=data,
-                        client_id=market.client_id,
-                    )
-
-                    logger.info(f"{market.name_company}: товаров с ценой: {len(products)}")
-
-                    db_arris.add_mvideo_card_products(products)
-
-                    logger.info(f"{market.name_company}: товары обработаны")
-
-                else:
-                    logger.error(f"{market.name_company}: каталог не получен")
-
-                # Получаем рекламные кампании
-                campaigns_data = api.get_mvideo_campaigns()
-
-                if campaigns_data is not None:
-                    adverts = parse_mvideo_adverts(
-                        data=campaigns_data,
-                        client_id=market.client_id,
-                    )
-
-                    logger.info(f"{market.name_company}: распарсено кампаний: {len(adverts)}")
-
-                    db_arris.add_mvideo_adverts(adverts)
-
-                    logger.info(f"{market.name_company}: рекламные кампании сохранены в БД")
-
-                    all_statistics = []
-
-                    for advert in adverts:
-                        stats_data = api.get_mvideo_campaign_stats_yesterday(
-                            campaign_id=advert.id_advert,
-                        )
-
-                        if stats_data is None:
-                            logger.error(
-                                f"{market.name_company}: статистика кампании "
-                                f"{advert.id_advert} не получена"
-                            )
-                            continue
-
-                        campaign_statistics = parse_mvideo_advert_statistics(
-                            data=stats_data,
-                            advert_id=advert.id_advert,
-                            client_id=market.client_id,
-                        )
-
-                        logger.info(
-                            f"{market.name_company}: кампания {advert.id_advert}, "
-                            f"строк статистики: {len(campaign_statistics)}"
-                        )
-
-                        all_statistics.extend(campaign_statistics)
-
-                    db_arris.add_mvideo_advert_statistics(all_statistics)
-
-                    logger.info(
-                        f"{market.name_company}: всего строк статистики сохранено: "
-                        f"{len(all_statistics)}"
-                    )
+                # # === Сбор данных через API ===
+                # api = MvideoApi(driver)
+                #
+                # # Получаем каталог товаров (со всех страниц)
+                # data = api.get_all_catalog_products()
+                #
+                # if data is not None:
+                #     logger.info(f"{market.name_company}: всего товаров: {data.get('totalElements')}")
+                #
+                #     products = parse_mvideo_catalog_products(
+                #         data=data,
+                #         client_id=market.client_id,
+                #     )
+                #
+                #     logger.info(f"{market.name_company}: товаров с ценой: {len(products)}")
+                #
+                #     db_arris.add_mvideo_card_products(products)
+                #
+                #     logger.info(f"{market.name_company}: товары обработаны")
+                #
+                # else:
+                #     logger.error(f"{market.name_company}: каталог не получен")
+                #
+                # # Получаем рекламные кампании
+                # campaigns_data = api.get_mvideo_campaigns()
+                #
+                # if campaigns_data is not None:
+                #     adverts = parse_mvideo_adverts(
+                #         data=campaigns_data,
+                #         client_id=market.client_id,
+                #     )
+                #
+                #     logger.info(f"{market.name_company}: распарсено кампаний: {len(adverts)}")
+                #
+                #     db_arris.add_mvideo_adverts(adverts)
+                #
+                #     logger.info(f"{market.name_company}: рекламные кампании сохранены в БД")
+                #
+                #     all_statistics = []
+                #
+                #     for advert in adverts:
+                #         stats_data = api.get_mvideo_campaign_stats_yesterday(
+                #             campaign_id=advert.id_advert,
+                #         )
+                #
+                #         if stats_data is None:
+                #             logger.error(
+                #                 f"{market.name_company}: статистика кампании "
+                #                 f"{advert.id_advert} не получена"
+                #             )
+                #             continue
+                #
+                #         campaign_statistics = parse_mvideo_advert_statistics(
+                #             data=stats_data,
+                #             advert_id=advert.id_advert,
+                #             client_id=market.client_id,
+                #         )
+                #
+                #         logger.info(
+                #             f"{market.name_company}: кампания {advert.id_advert}, "
+                #             f"строк статистики: {len(campaign_statistics)}"
+                #         )
+                #
+                #         all_statistics.extend(campaign_statistics)
+                #
+                #     db_arris.add_mvideo_advert_statistics(all_statistics)
+                #
+                #     logger.info(
+                #         f"{market.name_company}: всего строк статистики сохранено: "
+                #         f"{len(all_statistics)}"
+                #     )
 
                 # === Скачивание billing-отчётов за текущий месяц ===
                 reports = MvideoReports(driver, db_arris=db_arris)
-                reports.download_billing_reports_accumulating()
+                # reports.download_billing_reports_accumulating()
 
                 # === Скачивание консолидированного отчёта (analytics) ===
                 reports.download_consolidated_report()

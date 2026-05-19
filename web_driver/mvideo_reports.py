@@ -261,6 +261,14 @@ class MvideoReports:
 
         report = ConsolidatedReport(market=self.market, db_arris=self.db_arris)
 
+        # UUID отчёта зависит от кабинета (берём из карты внутри ConsolidatedReport)
+        report_uuid = report.REPORT_UUIDS.get(self.market.client_id)
+        if report_uuid is None:
+            self._error(
+                f"{report.LABEL}: нет REPORT_UUID для client_id={self.market.client_id}"
+            )
+            return None
+
         # 1. Триггер формирования
         request_time = get_moscow_time() - timedelta(minutes=1)
         body = report.build_body(start_date, end_date)
@@ -268,7 +276,7 @@ class MvideoReports:
             f"{report.LABEL}: триггер за период "
             f"{body['dateRange']['startDate']} … {body['dateRange']['endDate']}"
         )
-        url = f"{self.BASE}/api/rd/partner/3p/report/{report.REPORT_UUID}"
+        url = f"{self.BASE}/api/rd/partner/3p/report/{report_uuid}"
         try:
             r = session.post(
                 url,

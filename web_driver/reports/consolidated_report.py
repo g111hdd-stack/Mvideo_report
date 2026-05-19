@@ -29,7 +29,13 @@ class ConsolidatedReport(BaseReport):
     SHEET_NAME = "Отчёт по объектам"
 
     # Параметры API (используются MvideoReports для триггера и polling)
-    REPORT_UUID = "6aa12950-6c01-451d-8c76-6725558374d8"
+    # UUID отчёта индивидуальный для каждого кабинета MVideo — берём из карты.
+    REPORT_UUIDS: dict[str, str] = {
+        "K000071171": "6aa12950-6c01-451d-8c76-6725558374d8",  # Бурчян Г.С.
+        "K000073787": "6c0d395a-14c2-4dbd-bbc8-05ff51350c66",  # Лебедев М.С.
+        "K000074004": "ae7e760d-b4b7-4565-b433-9906e0f77afa",  # Мкртчян Х.М.
+    }
+
     TASK_NAME_PREFIX = "3P_main_report_"
 
     # Имена колонок в xlsx (точные, до нормализации)

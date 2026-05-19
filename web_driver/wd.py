@@ -87,7 +87,7 @@ class BrowserController:
         # Persistent context = профиль на диск (аналог -profile в Firefox)
         self.context = self._pw.chromium.launch_persistent_context(
             user_data_dir=self.profile_path,
-            headless=False,
+            headless=True,
             proxy=proxy_cfg,
             locale="ru-RU",
             no_viewport=True,  # ближе к реальному браузеру
