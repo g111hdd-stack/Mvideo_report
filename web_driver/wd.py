@@ -87,7 +87,7 @@ class BrowserController:
         # Persistent context = профиль на диск (аналог -profile в Firefox)
         self.context = self._pw.chromium.launch_persistent_context(
             user_data_dir=self.profile_path,
-            headless=True,
+            headless=False,
             proxy=proxy_cfg,
             locale="ru-RU",
             no_viewport=True,  # ближе к реальному браузеру
@@ -126,7 +126,7 @@ class BrowserController:
             current_url = self.page.url or ""
 
             # Если форма ввода телефона видна — нужна авторизация
-            login_input = self.page.locator("input[name='phone']")
+            login_input = self.page.locator("#phone")
             try:
                 login_input.wait_for(state="visible", timeout=3000)
                 login_form_visible = True
@@ -253,28 +253,36 @@ class BrowserController:
             log_info(f"Код на номер {self.phone} получен: {code}")
             log_info(f"Ввод кода {code}")
 
-            input_code = page.locator("mpa-ui-input[formcontrolname='code'] input")
-            input_code.wait_for(
-                state="visible",
-                timeout=TIME_AWAITED * 2 * 1000,
-            )
-            input_code.fill(code)
+            # Ждём появления первого поля
+            boxes = page.locator(".otp-step__box")
+            boxes.first.wait_for(state="visible", timeout=TIME_AWAITED * 2 * 1000)
 
-            button_confirm = page.get_by_role("button", name="Подтвердить")
-            button_confirm.wait_for(
-                state="visible",
-                timeout=TIME_AWAITED * 2 * 1000,
-            )
+            box_count = boxes.count()
+            if len(code) != box_count:
+                raise Exception(
+                    f"Длина кода ({len(code)}) не совпадает с числом полей ({box_count})"
+                )
 
-            log_info("Нажимаем на кнопку Подтвердить")
-            button_confirm.click(timeout=TIME_AWAITED * 2 * 1000)
+            # Заполняем по одной цифре в каждое поле
+            for i, digit in enumerate(code):
+                boxes.nth(i).fill(digit)
 
+            # Форма автоотправляется после заполнения всех 4 полей.
+            # Ждём, пока URL перестанет быть страницей логина (редирект на /mpa).
             try:
-                page.wait_for_load_state("load", timeout=TIME_AWAITED * 4 * 1000)
+                page.wait_for_url(
+                    lambda url: "/login/authorization" not in url,
+                    timeout=TIME_AWAITED * 6 * 1000,
+                )
             except PwTimeoutError:
                 pass
 
-            time.sleep(TIME_AWAITED)
+            # Дополнительная пауза на рендер кабинета
+            try:
+                page.wait_for_load_state("load", timeout=TIME_AWAITED * 2 * 1000)
+            except PwTimeoutError:
+                pass
+            time.sleep(2)
 
             if not check_login():
                 current_url = page.url or ""
@@ -286,20 +294,18 @@ class BrowserController:
 
                 log_info(f"Ввод номера телефона {self.phone}")
 
-                input_phone = page.locator("input[name='phone']")
+                input_phone = page.locator("#phone")
                 input_phone.wait_for(
                     state="visible",
                     timeout=TIME_AWAITED * 4 * 1000,
                 )
+                input_phone.fill(self.phone)  # ← без срезов, как есть из БД
 
-                input_phone.fill("")
-                input_phone.fill(self.phone)
-
-                log_info("Нажимаем кнопку Войти")
+                log_info("Нажимаем кнопку Получить код")
 
                 time_request = get_moscow_time()
 
-                button_login = page.get_by_role("button", name="Войти")
+                button_login = page.get_by_role("button", name="Получить код")
                 button_login.wait_for(
                     state="visible",
                     timeout=TIME_AWAITED * 4 * 1000,
@@ -315,7 +321,7 @@ class BrowserController:
 
                 button_login.click(timeout=TIME_AWAITED * 4 * 1000)
 
-                log_info("Номер телефона введён, кнопка Войти нажата")
+                log_info("Номер телефона введён, кнопка Получить код нажата")
 
                 wait_and_enter_code(time_request)
                 return True

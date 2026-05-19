@@ -35,7 +35,7 @@ def main():
 
         markets = db_admin.get_markets()
 
-        for market in markets[0:1]:
+        for market in markets[1:2]:
             # if market.name_company != "Мкртчян Х.М.":
             #     continue
             driver = None
@@ -132,7 +132,7 @@ def main():
 
                 # === Скачивание billing-отчётов за текущий месяц ===
                 reports = MvideoReports(driver, db_arris=db_arris)
-                # reports.download_billing_reports_accumulating()
+                reports.download_billing_reports_accumulating()
 
                 # === Скачивание консолидированного отчёта (analytics) ===
                 reports.download_consolidated_report()
