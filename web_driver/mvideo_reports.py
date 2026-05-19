@@ -26,6 +26,7 @@ from web_driver.reports import (
     StorageReport,
     ConsolidatedReport,
 )
+from web_driver.reports._common import BaseReport
 
 
 # (serviceType, taskType, имя файла) — порядок важен для logging и итерации
@@ -51,7 +52,6 @@ class MvideoReports:
         Если driver=None — оффлайн-режим (только парсинг локальных файлов),
         в этом случае нужно передать market отдельно.
         """
-        self.driver = driver
         if driver is not None:
             self.page = driver.page
             self.context = driver.context
@@ -64,7 +64,7 @@ class MvideoReports:
         self._token: str | None = None
 
         # Per-report инстансы — создаются один раз и переиспользуются
-        self._reports_by_service: dict[str, object] = {
+        self._reports_by_service: dict[str, BaseReport] = {
             cls.SERVICE_TYPE: cls(market=self.market, db_arris=db_arris)
             for cls in self.BILLING_REPORT_CLASSES
         }
