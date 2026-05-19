@@ -73,3 +73,16 @@ class DataMvideoAcquiring:
     total_sum: Optional[float]
     transaction_type: Optional[str]
     cost: Optional[float]
+
+
+@dataclass
+class DataMvideoMainTable:
+    accrual_date: date
+    client_id: str
+    type_of_transaction: str         # 'delivered' / 'cancelled'
+    sku: str
+    delivery_schema: Optional[str]
+    vendor_code: Optional[str]       # подтягивается из mv_card_product
+    sale: Optional[float]            # сумма продаж
+    quantities: Optional[int]        # количество продаж
+    commission: Optional[float]      # sale * commission из mv_card_product

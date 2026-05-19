@@ -20,6 +20,7 @@ from database.data_classes import (
     DataMvideoStock,
     DataMvideoDistribution,
     DataMvideoAcquiring,
+    DataMvideoMainTable,
 )
 
 
@@ -127,6 +128,15 @@ class DbConnection:
 
         logger.info("Таблица mv_acquiring успешно создана")
 
+    @retry_on_exception()
+    def create_mv_main_table(self) -> None:
+        MvideoMainTable.__table__.create(
+            bind=self.engine,
+            checkfirst=True,
+        )
+
+        logger.info("Таблица mv_main_table успешно создана")
+
 
     # === Удаление таблиц ===
 
@@ -184,6 +194,49 @@ class DbConnection:
 
         logger.info("Таблица mv_acquiring успешно удалена")
 
+    @retry_on_exception()
+    def drop_mv_main_table(self) -> None:
+        MvideoMainTable.__table__.drop(
+            bind=self.engine,
+            checkfirst=True,
+        )
+
+        logger.info("Таблица mv_main_table успешно удалена")
+
+
+    @retry_on_exception()
+    def get_card_products_meta(
+            self,
+            client_id: str,
+            skus: list[str],
+    ) -> dict[str, tuple[str | None, float | None]]:
+        """
+        Возвращает {sku: (vendor_code, commission_rate)} для SKU из списка
+        в рамках client_id. SKU, которых нет в mv_card_product, в результате нет.
+
+        commission_rate — это доля (0.13 для 13%), а не сумма.
+        """
+        if not skus:
+            return {}
+
+        rows = (
+            self.session
+            .query(
+                MvideoCardProduct.sku,
+                MvideoCardProduct.vendor_code,
+                MvideoCardProduct.commission,
+            )
+            .filter(MvideoCardProduct.client_id == client_id)
+            .filter(MvideoCardProduct.sku.in_(skus))
+            .all()
+        )
+        return {
+            row.sku: (
+                row.vendor_code,
+                float(row.commission) if row.commission is not None else None,
+            )
+            for row in rows
+        }
 
     @retry_on_exception()
     def get_markets(self) -> list[Market]:
@@ -444,5 +497,48 @@ class DbConnection:
 
         logger.info(
             f"Успешно добавлено/обновлено строк acquiring-отчёта: {len(rows)}"
+        )
+
+    @retry_on_exception()
+    def add_mvideo_main_tables(
+            self,
+            rows: list[DataMvideoMainTable],
+    ) -> None:
+        if not rows:
+            logger.info("Нет строк mv_main_table для записи в базу")
+            return
+
+        for row in rows:
+            stmt = insert(MvideoMainTable).values(
+                accrual_date=row.accrual_date,
+                client_id=row.client_id,
+                type_of_transaction=row.type_of_transaction,
+                sku=row.sku,
+                delivery_schema=row.delivery_schema,
+                vendor_code=row.vendor_code,
+                sale=row.sale,
+                quantities=row.quantities,
+                commission=row.commission,
+            ).on_conflict_do_update(
+                index_elements=[
+                    "accrual_date",
+                    "client_id",
+                    "type_of_transaction",
+                    "delivery_schema",
+                    "sku",
+                ],
+                set_={
+                    "vendor_code": row.vendor_code,
+                    "sale": row.sale,
+                    "quantities": row.quantities,
+                    "commission": row.commission,
+                },
+            )
+            self.session.execute(stmt)
+
+        self.session.commit()
+
+        logger.info(
+            f"Успешно добавлено/обновлено строк mv_main_table: {len(rows)}"
         )
 

@@ -287,6 +287,51 @@ class MvideoAcquiring(Base):
     )
 
 
+class MvideoMainTable(Base):
+    """
+    Сводная таблица продаж: одна строка на (accrual_date, client_id, sku, type_of_transaction).
+    Поля заполняются из консолидированного отчёта; vendor_code и commission подтягиваются
+    по SKU из mv_card_product.
+    """
+    __tablename__ = 'mv_main_table'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+
+    accrual_date = Column(Date, nullable=False)             # дата продажи
+    client_id = Column(
+        String(length=255),
+        ForeignKey(
+            'clients.client_id',
+            name='mv_main_table_clients_fk',
+            ondelete='CASCADE',
+            onupdate='CASCADE',
+        ),
+        nullable=False,
+    )                                                        # айди кабинета
+    type_of_transaction = Column(String(length=255), nullable=False)
+    # 'delivered' если сумма положительная, 'cancelled' если отрицательная
+
+    vendor_code = Column(String(length=255), nullable=True)  # из mv_card_product
+    delivery_schema = Column(String(length=255), nullable=True)  # «Тип объекта в документе»
+
+    sku = Column(String(length=255), nullable=False)
+
+    sale = Column(Numeric(14, 2), nullable=True)             # сумма продаж
+    quantities = Column(BigInteger, nullable=True)           # количество продаж
+    commission = Column(Numeric(14, 2), nullable=True)       # sale * commission из mv_card_product
+
+    __table_args__ = (
+        UniqueConstraint(
+            'accrual_date',
+            'client_id',
+            'type_of_transaction',
+            'delivery_schema',
+            'sku',
+            name='mv_main_table_unique',
+        ),
+    )
+
+
 
 
 

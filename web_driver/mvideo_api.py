@@ -85,7 +85,13 @@ class MvideoApi:
         return None
 
     # --- публичные методы ---
-    def open_catalog_and_get_products(self, page: int = 0, size: int = 50):
+    def get_all_catalog_products(self, page_size: int = 100) -> dict | None:
+        """
+        Тянет ВСЕ товары каталога через пагинацию.
+        Возвращает агрегированный dict в формате одной страницы:
+            {"content": [все товары], "totalElements": N}
+        При ошибке API на любой странице — возвращает None.
+        """
         catalog_url = f"{self.BASE}/mpa/products/catalog"
         try:
             self.page.goto(catalog_url, wait_until="domcontentloaded", timeout=90_000)
@@ -93,15 +99,42 @@ class MvideoApi:
             self._info(f"каталог не дождался загрузки, продолжаю. URL: {self.page.url}")
         self.page.wait_for_timeout(5000)
 
-        return self._api(
-            "GET", f"{self.BASE}/api/catalog", referer=catalog_url,
-            params={
-                "page": page, "size": size,
-                "sort": "createdDate,desc",
-                "filter": "productType:MARKETPLACE,archived:false",
-                "fields": "+prices",
-            },
-        )
+        all_items: list[dict] = []
+        page = 0
+
+        while True:
+            data = self._api(
+                "GET", f"{self.BASE}/api/catalog",
+                referer=catalog_url,
+                params={
+                    "page": page,
+                    "size": page_size,
+                    "sort": "createdDate,desc",
+                    "filter": "productType:MARKETPLACE,archived:false",
+                    "fields": "+prices",
+                },
+            )
+            if data is None:
+                return None
+
+            items = data.get("content") or []
+            all_items.extend(items)
+
+            total_pages = data.get("totalPages", 1)
+            total_elements = data.get("totalElements", len(all_items))
+            self._info(
+                f"каталог: страница {page + 1}/{total_pages}, "
+                f"получено {len(items)}, всего пока {len(all_items)}/{total_elements}"
+            )
+
+            page += 1
+            if page >= total_pages or not items:
+                break
+
+        return {
+            "content": all_items,
+            "totalElements": len(all_items),
+        }
 
     def get_mvideo_campaigns(self):
         return self._api(

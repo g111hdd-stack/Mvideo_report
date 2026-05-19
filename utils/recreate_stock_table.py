@@ -7,12 +7,13 @@ def main() -> None:
     try:
         # === DROP (от потомков к родителям) ===
         # db.drop_mv_advert_statistic()   # FK -> mv_adverts_table, clients
-        # db.drop_mvideo_acquiring_table()          # FK -> clients
+        # db.drop_mv_main_table()         # FK -> clients
+        # db.drop_mv_acquiring()          # FK -> clients
         # db.drop_mv_storage()
-        # db.drop_mvideo_distribution_table()
+        # db.drop_mv_distribution()
         # db.drop_mv_stocks()
-        # db.drop_mvideo_advert_table()
-        # db.drop_mvideo_card_product_table()
+        # db.drop_mv_adverts_table()
+        # db.drop_mv_card_product()
 
         # === CREATE (от родителей к потомкам, clients уже должна быть в БД) ===
         # db.create_mv_card_product()
@@ -21,6 +22,7 @@ def main() -> None:
         # db.create_mv_stocks()
         # db.create_mv_log()
         # db.create_mv_acquiring()          # требует clients
+        # db.create_mv_main_table()         # требует clients
 
 
         print("Все таблицы mvideo_* успешно пересозданы")

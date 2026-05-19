@@ -35,7 +35,7 @@ def main():
 
         markets = db_admin.get_markets()
 
-        for market in markets:
+        for market in markets[0:1]:
             # if market.name_company != "Мкртчян Х.М.":
             #     continue
             driver = None
@@ -61,8 +61,8 @@ def main():
                 # === Сбор данных через API ===
                 api = MvideoApi(driver)
 
-                # Получаем каталог товаров
-                data = api.open_catalog_and_get_products()
+                # Получаем каталог товаров (со всех страниц)
+                data = api.get_all_catalog_products()
 
                 if data is not None:
                     logger.info(f"{market.name_company}: всего товаров: {data.get('totalElements')}")
@@ -132,7 +132,10 @@ def main():
 
                 # === Скачивание billing-отчётов за текущий месяц ===
                 reports = MvideoReports(driver, db_arris=db_arris)
-                reports.download_billing_reports_accumulating()
+                # reports.download_billing_reports_accumulating()
+
+                # === Скачивание консолидированного отчёта (analytics) ===
+                reports.download_consolidated_report()
 
                 if KEEP_BROWSER_OPEN:
                     input("Браузер оставлен открытым. Нажмите Enter, чтобы закрыть...")
