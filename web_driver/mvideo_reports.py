@@ -248,14 +248,13 @@ class MvideoReports:
         По умолчанию period = текущий месяц по MSK.
         Делегирует только parse_and_save в ConsolidatedReport; всю сеть обрабатывает сам.
         """
-        # По умолчанию берём «вчера». Это автоматически решает кейс «1-го числа»:
-        # 1 июня 2026 → end_date=31.05.2026, start_date=01.05.2026 → полный май.
+        # По умолчанию берём последние 10 дней включая сегодня.
+        # Пример: сегодня 19.05.2026 → start=10.05.2026, end=19.05.2026 (10 дней).
         today_msk = get_moscow_time().date()
-        yesterday = today_msk - timedelta(days=1)
         if end_date is None:
-            end_date = yesterday
+            end_date = today_msk
         if start_date is None:
-            start_date = yesterday.replace(day=1)
+            start_date = today_msk - timedelta(days=9)
 
         referer = f"{self.BASE}/mpa/analytics/reports"
         session = self._build_session(referer)
