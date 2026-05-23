@@ -29,15 +29,6 @@ from web_driver.reports import (
 from web_driver.reports._common import BaseReport
 
 
-# (serviceType, taskType, имя файла) — порядок важен для logging и итерации
-SERVICE_TYPES: list[tuple[str, str, str]] = [
-    ("DISTRIBUTION", "BILLING_SUPPLIER_DISTRIBUTION", "distribution.xlsx"),
-    ("STORAGE",      "BILLING_SUPPLIER_STORAGE",      "storage.xlsx"),
-    ("ACQUIRING",    "BILLING_SUPPLIER_ACQUIRING",    "acquiring.xlsx"),
-    ("COMMISSION",   "BILLING_SUPPLIER_COMMISSION",   "commission.xlsx"),
-]
-
-
 class MvideoReports:
     """HTTP-клиент для отчётов МВидео + координатор per-report парсеров."""
 
@@ -45,6 +36,18 @@ class MvideoReports:
 
     # Список классов отчётов, для которых есть парсинг billing-xlsx → БД
     BILLING_REPORT_CLASSES = [DistributionReport, AcquiringReport, StorageReport]
+
+    # Статусы периодов, для которых нужно скачивать отчёты.
+    PERIOD_STATUSES_TO_DOWNLOAD: tuple[str, ...] = ("OPEN", "ACCUMULATING")
+
+    # Маппинг client_id -> supplierMpaId для запроса периодов STORAGE.
+    # Числовой ID поставщика в MPA-системе (отличается от client_id вида K000xxxxx).
+    # Где взять: DevTools → Network → ищем proxy/?...userId={mpa_id}_...
+    SUPPLIER_MPA_IDS: dict[str, int] = {
+        "K000071171": 10440,      # Бурчян Г.С.
+        "K000073787": 13169,      # Лебедев М.С.
+        "K000074004": 13474,      # Мкртчян Х.М.
+    }
 
     def __init__(self, driver=None, db_arris=None, market=None) -> None:
         """
@@ -123,112 +126,291 @@ class MvideoReports:
         return s
 
     # =====================================================================
-    # Скачивание billing-отчётов
+    # Публичные методы скачивания billing-отчётов (по сервису)
     # =====================================================================
 
-    def download_billing_reports_accumulating(
+    def download_distribution_reports(
+            self,
+            download_dir: str = "report",
+            poll_interval_s: int = 30,
+            max_wait_s: int = 360,
+    ) -> list[str]:
+        """Скачивает DISTRIBUTION-отчёты за все периоды OPEN/ACCUMULATING."""
+        session = self._build_session(f"{self.BASE}/mpa/billing/reports/distribution")
+        if session is None:
+            return []
+        periods = self._fetch_periods_distribution(session)
+        return self._download_periods(
+            session,
+            periods=periods,
+            service_type=DistributionReport.SERVICE_TYPE,
+            task_type=DistributionReport.TASK_TYPE,
+            label=DistributionReport.LABEL,
+            download_dir=download_dir,
+            poll_interval_s=poll_interval_s,
+            max_wait_s=max_wait_s,
+        )
+
+    def download_storage_reports(
+            self,
+            download_dir: str = "report",
+            poll_interval_s: int = 30,
+            max_wait_s: int = 360,
+    ) -> list[str]:
+        """Скачивает STORAGE-отчёты за все периоды OPEN/ACCUMULATING."""
+        session = self._build_session(f"{self.BASE}/mpa/billing/reports/storage")
+        if session is None:
+            return []
+        periods = self._fetch_periods_storage(session)
+        return self._download_periods(
+            session,
+            periods=periods,
+            service_type=StorageReport.SERVICE_TYPE,
+            task_type=StorageReport.TASK_TYPE,
+            label=StorageReport.LABEL,
+            download_dir=download_dir,
+            poll_interval_s=poll_interval_s,
+            max_wait_s=max_wait_s,
+        )
+
+    def download_acquiring_reports(
+            self,
+            download_dir: str = "report",
+            poll_interval_s: int = 30,
+            max_wait_s: int = 360,
+    ) -> list[str]:
+        """Скачивает ACQUIRING-отчёты за все периоды OPEN/ACCUMULATING."""
+        session = self._build_session(f"{self.BASE}/mpa/billing/reports/acquiring")
+        if session is None:
+            return []
+        periods = self._fetch_periods_acquiring(session)
+        return self._download_periods(
+            session,
+            periods=periods,
+            service_type=AcquiringReport.SERVICE_TYPE,
+            task_type=AcquiringReport.TASK_TYPE,
+            label=AcquiringReport.LABEL,
+            download_dir=download_dir,
+            poll_interval_s=poll_interval_s,
+            max_wait_s=max_wait_s,
+        )
+
+    def download_commission_reports(
             self,
             download_dir: str = "report",
             poll_interval_s: int = 30,
             max_wait_s: int = 360,
     ) -> list[str]:
         """
-        Скачивает billing-отчёты (distribution, storage, acquiring)
-        для всех периодов со статусом ACCUMULATING.
-
-        Алгоритм:
-        1. GET список периодов /api/v1/billing/distribution/periods/supplier
-        2. Фильтруем по status='ACCUMULATING'
-        3. Для каждого периода:
-           a) POST на формирование (по одному запросу на каждый serviceType)
-           b) Поллим /api/report/task/search, пока для каждого task'а
-              не появится status='FINISH' (тогда скачиваем) или 'NO_DATA' (пропускаем)
-           c) GET /api/report/task/report/{id} — скачиваем готовые xlsx
-        Сохраняет файлы в report/<name_company>/<today_msk>/<service>.xlsx
-        После скачивания парсит файл соответствующим отчётом и пишет в БД.
+        Скачивает COMMISSION-отчёты за все периоды OPEN/ACCUMULATING.
+        Парсер не подключён — xlsx только сохраняется на диск.
         """
-        referer = f"{self.BASE}/mpa/billing/reports/distribution"
-        session = self._build_session(referer)
+        session = self._build_session(f"{self.BASE}/mpa/billing/reports/commission")
         if session is None:
             return []
+        periods = self._fetch_periods_commission(session)
+        return self._download_periods(
+            session,
+            periods=periods,
+            service_type="COMMISSION",
+            task_type="BILLING_SUPPLIER_COMMISSION",
+            label="commission",
+            download_dir=download_dir,
+            poll_interval_s=poll_interval_s,
+            max_wait_s=max_wait_s,
+        )
 
-        # 1. Список периодов
-        periods = self._http_get_json(
+    def download_all_billing_reports(
+            self,
+            download_dir: str = "report",
+            poll_interval_s: int = 30,
+            max_wait_s: int = 360,
+    ) -> dict[str, list[str]]:
+        """Скачивает все billing-отчёты последовательно. Удобно вызывать из main."""
+        kwargs = dict(
+            download_dir=download_dir,
+            poll_interval_s=poll_interval_s,
+            max_wait_s=max_wait_s,
+        )
+        return {
+            "distribution": self.download_distribution_reports(**kwargs),
+            "storage":      self.download_storage_reports(**kwargs),
+            "acquiring":    self.download_acquiring_reports(**kwargs),
+            "commission":   self.download_commission_reports(**kwargs),
+        }
+
+    # =====================================================================
+    # Запрос списков периодов (URL/формат у каждого сервиса свой)
+    # =====================================================================
+
+    def _fetch_periods_distribution(self, session: requests.Session) -> list[dict]:
+        """GET /api/v1/billing/distribution/periods/supplier?page=0&size=50&sort="""
+        data = self._http_get_json(
             session,
             f"{self.BASE}/api/v1/billing/distribution/periods/supplier",
             params={"page": 0, "size": 50, "sort": ""},
         )
+        if not data:
+            return []
+        return data.get("content", []) if isinstance(data, dict) else []
+
+    def _fetch_periods_storage(self, session: requests.Session) -> list[dict]:
+        """POST /api/v1/billing/periods/storage/supplier?supplierMpaId=…"""
+        mpa_id = self.SUPPLIER_MPA_IDS.get(self.market.client_id)
+        if not mpa_id:
+            self._error(
+                f"STORAGE: supplierMpaId не задан для client_id={self.market.client_id} "
+                f"(добавьте в MvideoReports.SUPPLIER_MPA_IDS)"
+            )
+            return []
+        data = self._http_post_json(
+            session,
+            f"{self.BASE}/api/v1/billing/periods/storage/supplier",
+            params={"supplierMpaId": mpa_id},
+            json_body={
+                "page": 1, "size": 50,
+                "sorts": [{"field": "startDate", "sortType": "DESC"}],
+            },
+        )
+        if not data:
+            return []
+        return data.get("content", []) if isinstance(data, dict) else []
+
+    def _fetch_periods_acquiring(self, session: requests.Session) -> list[dict]:
+        """POST /api/v1/billing/ACQUIRING/periods"""
+        data = self._http_post_json(
+            session,
+            f"{self.BASE}/api/v1/billing/ACQUIRING/periods",
+            json_body={
+                "page": 1, "size": 50,
+                "sorts": [{"field": "startDate", "sortType": "DESC"}],
+            },
+        )
+        if not data:
+            return []
+        return data.get("content", []) if isinstance(data, dict) else []
+
+    def _fetch_periods_commission(self, session: requests.Session) -> list[dict]:
+        """POST /api/v1/billing/COMMISSION/periods"""
+        data = self._http_post_json(
+            session,
+            f"{self.BASE}/api/v1/billing/COMMISSION/periods",
+            json_body={
+                "page": 1, "size": 50,
+                "sorts": [{"field": "startDate", "sortType": "DESC"}],
+            },
+        )
+        if not data:
+            return []
+        return data.get("content", []) if isinstance(data, dict) else []
+
+    # =====================================================================
+    # Общая логика скачивания всех периодов одного сервиса
+    # =====================================================================
+
+    def _download_periods(
+            self,
+            session: requests.Session,
+            *,
+            periods: list[dict],
+            service_type: str,
+            task_type: str,
+            label: str,
+            download_dir: str,
+            poll_interval_s: int,
+            max_wait_s: int,
+    ) -> list[str]:
+        """Фильтрует периоды и качает каждый по очереди через _download_one_billing_period."""
         if not periods:
-            self._error("список периодов не получен")
+            self._info(f"{label}: список периодов пуст")
             return []
 
-        accumulating = [
-            p for p in periods.get("content", [])
-            if p.get("status") == "ACCUMULATING"
+        to_download = [
+            p for p in periods
+            if p.get("status") in self.PERIOD_STATUSES_TO_DOWNLOAD
         ]
-        self._info(f"Найдено периодов ACCUMULATING: {len(accumulating)}")
-        if not accumulating:
+        statuses_str = "/".join(self.PERIOD_STATUSES_TO_DOWNLOAD)
+        self._info(f"{label}: найдено периодов {statuses_str}: {len(to_download)}")
+        if not to_download:
             return []
+
+        report = self._reports_by_service.get(service_type)
 
         saved: list[str] = []
-        for period in accumulating:
+        for period in to_download:
             start_date = period["startDate"]
-
-            # 2. Фиксируем московское время до запросов (минус минута для подстраховки)
-            request_time = get_moscow_time() - timedelta(minutes=1)
-            self._info(
-                f"Инициирую формирование отчётов за {start_date} "
-                f"(request_time MSK: {request_time:%Y-%m-%d %H:%M:%S})"
-            )
-
-            # 3. Запускаем формирование всех типов
-            for service_type, _, _ in SERVICE_TYPES:
-                ok = self._http_post(
-                    session,
-                    f"{self.BASE}/api/v1/rd/billing/report/supplier/{self.market.client_id}",
-                    params={
-                        "serviceType": service_type,
-                        "date": start_date,
-                        "closed": "false",
-                    },
-                )
-                if ok:
-                    self._info(f"  → {service_type}: формирование запущено")
-                else:
-                    self._error(f"  → {service_type}: ошибка инициации")
-
-            # 4. Поллим все task'и одновременно
-            results = self._poll_all_tasks(
+            path = self._download_one_billing_period(
                 session=session,
+                service_type=service_type,
+                task_type=task_type,
+                label=label,
                 start_date=start_date,
-                request_time=request_time,
+                report=report,
+                download_dir=download_dir,
                 poll_interval_s=poll_interval_s,
                 max_wait_s=max_wait_s,
             )
-
-            # 5. Скачиваем готовые + парсим через per-report классы
-            for service_type, _, _ in SERVICE_TYPES:
-                task = results.get(service_type)
-                if task is None:
-                    continue  # NO_DATA, ошибка или таймаут
-                path = self._download_task_file(
-                    session=session,
-                    task=task,
-                    download_dir=download_dir,
-                )
-                if not path:
-                    continue
+            if path is not None:
                 saved.append(path)
-
-                # Делегируем парсинг + запись соответствующему классу отчёта
-                report = self._reports_by_service.get(service_type)
-                if report is not None and self.db_arris is not None:
-                    saved_rows = report.parse_and_save(path)
-                    self._info(
-                        f"{service_type}: записано строк {saved_rows}"
-                    )
-
         return saved
+
+    def _download_one_billing_period(
+            self,
+            session: requests.Session,
+            *,
+            service_type: str,
+            task_type: str,
+            label: str,
+            start_date: str,
+            report,
+            download_dir: str,
+            poll_interval_s: int,
+            max_wait_s: int,
+    ) -> str | None:
+        """Один период одного сервиса: триггер POST → polling → скачивание → парсинг."""
+        request_time = get_moscow_time() - timedelta(minutes=1)
+        self._info(
+            f"{label}: инициирую формирование за {start_date} "
+            f"(request_time MSK: {request_time:%Y-%m-%d %H:%M:%S})"
+        )
+
+        ok = self._http_post(
+            session,
+            f"{self.BASE}/api/v1/rd/billing/report/supplier/{self.market.client_id}",
+            params={
+                "serviceType": service_type,
+                "date": start_date,
+                "closed": "false",
+            },
+        )
+        if not ok:
+            self._error(f"{label}: ошибка инициации за {start_date}")
+            return None
+
+        task = self._poll_single_task(
+            session=session,
+            match_fn=lambda t: (
+                t.get("taskType") == task_type
+                and self._task_matches(t, start_date, request_time)
+            ),
+            label=f"{label} ({start_date})",
+            poll_interval_s=poll_interval_s,
+            max_wait_s=max_wait_s,
+        )
+        if task is None:
+            return None
+
+        path = self._download_task_file(
+            session=session, task=task, download_dir=download_dir,
+        )
+        if path is None:
+            return None
+
+        if report is not None and self.db_arris is not None:
+            saved_rows = report.parse_and_save(path)
+            self._info(f"{label}: записано строк {saved_rows}")
+
+        return path
 
     # =====================================================================
     # Скачивание консолидированного отчёта (одиночный task)
@@ -568,81 +750,8 @@ class MvideoReports:
             return None
 
     # =====================================================================
-    # Поллинг билинг-задач
+    # Матчинг billing-задач (используется из _download_one_billing_period)
     # =====================================================================
-
-    def _poll_all_tasks(
-            self,
-            session: requests.Session,
-            start_date: str,
-            request_time: datetime,
-            poll_interval_s: int,
-            max_wait_s: int,
-    ) -> dict[str, dict | None]:
-        """
-        Опрашивает /api/report/task/search до тех пор, пока для каждого из типов
-        не появится статус FINISH (вернёт сам task) или NO_DATA (None).
-        Возвращает dict service_type -> task (или None если NO_DATA/таймаут).
-        """
-        url = f"{self.BASE}/api/report/task/search"
-        search_body = {
-            "pageable": {
-                "page": 1,
-                "size": 50,
-                "sorts": [{"field": "createdTime", "sortType": "DESC"}],
-            },
-            "filters": [],
-        }
-        deadline = time.time() + max_wait_s
-
-        # Маппинг taskType -> serviceType (то что ещё ждём)
-        pending: dict[str, str] = {tt: st for st, tt, _ in SERVICE_TYPES}
-        results: dict[str, dict | None] = {}
-
-        while pending and time.time() < deadline:
-            data = self._http_post_json(
-                session,
-                url,
-                json_body=search_body,
-                content_type="application/mvideo.api.v1+json",
-            )
-
-            if data is not None:
-                for task in data.get("content", []):
-                    task_type = task.get("taskType")
-                    if task_type not in pending:
-                        continue
-                    if not self._task_matches(task, start_date, request_time):
-                        continue
-
-                    status = task.get("status")
-                    service_type = pending[task_type]
-
-                    if status == "FINISH":
-                        results[service_type] = task
-                        self._info(
-                            f"  ✓ {service_type}: готов (task_id={task.get('id')})"
-                        )
-                        pending.pop(task_type, None)
-                    elif status == "NO_DATA":
-                        results[service_type] = None
-                        self._info(f"  ⊘ {service_type}: NO_DATA, пропускаю")
-                        pending.pop(task_type, None)
-                    # PROCESSING/IN_PROGRESS/прочее — продолжаем ждать
-
-            if pending:
-                still_waiting = list(pending.values())
-                self._info(
-                    f"Ждём ещё {poll_interval_s}с (в работе: {still_waiting})"
-                )
-                time.sleep(poll_interval_s)
-
-        # То что не дождались — фиксируем как None
-        for tt, st in pending.items():
-            results[st] = None
-            self._error(f"  ✗ {st}: не сформировался за {max_wait_s}с")
-
-        return results
 
     def _task_matches(self, task: dict, start_date: str, request_time: datetime) -> bool:
         """
