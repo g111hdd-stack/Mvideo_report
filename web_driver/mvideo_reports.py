@@ -436,7 +436,7 @@ class MvideoReports:
         if end_date is None:
             end_date = today_msk
         if start_date is None:
-            start_date = today_msk - timedelta(days=31)
+            start_date = today_msk - timedelta(days=10)
 
         referer = f"{self.BASE}/mpa/analytics/reports"
         session = self._build_session(referer)
