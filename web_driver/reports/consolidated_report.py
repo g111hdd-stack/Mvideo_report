@@ -19,6 +19,13 @@ from web_driver.reports._common import (
 )
 
 
+def _sum_optional(a, b):
+    """Сумма с поддержкой None: None трактуется как 0, но (None + None) → None."""
+    if a is None and b is None:
+        return None
+    return (a or 0) + (b or 0)
+
+
 class ConsolidatedReport(BaseReport):
     """Парсит 3P_main_report.xlsx и пишет в mv_main_table."""
 
@@ -129,10 +136,11 @@ class ConsolidatedReport(BaseReport):
                 continue
 
             sale = to_float(cell("sale"))
-            if sale is None or sale == 0:
-                continue
+            if sale is None:
+                continue  # пустая sale всё равно отбрасывается — иначе крашнется на sale > 0
 
-            type_of_transaction = "delivered" if sale > 0 else "cancelled"
+            # 0 и положительные → delivered, отрицательные → cancelled
+            type_of_transaction = "cancelled" if sale < 0 else "delivered"
 
             rows_data.append(DataMvideoMainTable(
                 accrual_date=row_date,
@@ -151,8 +159,9 @@ class ConsolidatedReport(BaseReport):
 
     def parse_and_save(self, file_path: str) -> int:
         """
-        Парсит файл, обогащает строки vendor_code + commission из mv_card_product
-        и пишет в mv_main_table. Возвращает количество записанных строк.
+        Парсит файл, обогащает строки vendor_code + commission из mv_card_product,
+        агрегирует по уникальному ключу и пишет в mv_main_table.
+        Возвращает количество записанных строк (после агрегации).
         """
         try:
             rows = self.parse_xlsx(file_path)
@@ -165,6 +174,7 @@ class ConsolidatedReport(BaseReport):
 
         if self.db_arris is not None:
             self._enrich_from_card_products(rows)
+            rows = self._aggregate_rows(rows)
             try:
                 self.db_arris.add_mvideo_main_tables(rows)
             except Exception as e:
@@ -172,6 +182,44 @@ class ConsolidatedReport(BaseReport):
                 return 0
 
         return len(rows)
+
+    def _aggregate_rows(
+            self,
+            rows: list[DataMvideoMainTable],
+    ) -> list[DataMvideoMainTable]:
+        """
+        Группирует строки по ключу
+        (accrual_date, client_id, type_of_transaction, delivery_schema, sku)
+        и суммирует sale, quantities, commission.
+
+        None при суммировании трактуется как 0; если все слагаемые None — итог None.
+        """
+        grouped: dict[tuple, DataMvideoMainTable] = {}
+
+        for r in rows:
+            key = (
+                r.accrual_date,
+                r.client_id,
+                r.type_of_transaction,
+                r.delivery_schema,
+                r.sku,
+            )
+            existing = grouped.get(key)
+            if existing is None:
+                grouped[key] = r
+                continue
+
+            existing.sale = _sum_optional(existing.sale, r.sale)
+            existing.quantities = _sum_optional(existing.quantities, r.quantities)
+            existing.commission = _sum_optional(existing.commission, r.commission)
+
+        result = list(grouped.values())
+        if len(result) != len(rows):
+            self._info(
+                f"{self.LABEL}: агрегация {len(rows)} → {len(result)} строк "
+                f"(сумма sale/quantities/commission по 5-полей-ключу)"
+            )
+        return result
 
     def _enrich_from_card_products(self, rows: list[DataMvideoMainTable]) -> None:
         """

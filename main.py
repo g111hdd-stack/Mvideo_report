@@ -1,3 +1,5 @@
+from datetime import date
+
 from sqlalchemy import text
 
 from config import DB_ADMIN_URL, DB_ARRIS_URL
@@ -141,10 +143,13 @@ def main():
                 reports.download_commission_reports()
 
                 # Или одной строкой все 4 разом:
-                # reports.download_all_billing_reports()
+                reports.download_all_billing_reports()
 
                 # === Скачивание консолидированного отчёта (analytics) ===
-                # reports.download_consolidated_report()
+                reports.download_consolidated_report(
+                    start_date=date(2026, 5, 1),
+                    end_date=date(2026, 5, 31),
+                )
 
                 if KEEP_BROWSER_OPEN:
                     input("Браузер оставлен открытым. Нажмите Enter, чтобы закрыть...")
