@@ -9,7 +9,7 @@ def main() -> None:
         # db.drop_mv_advert_statistic()   # FK -> mv_adverts_table, clients
         # db.drop_mv_main_table()         # FK -> clients
         # db.drop_mv_acquiring()          # FK -> clients
-        # db.drop_mv_storage()
+        # db.drop_mv_log()
         # db.drop_mv_distribution()
         # db.drop_mv_stocks()
         # db.drop_mv_adverts_table()

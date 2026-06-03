@@ -186,6 +186,16 @@ class DbConnection:
         logger.info("Таблица mv_distribution успешно удалена")
 
     @retry_on_exception()
+    def drop_mv_log(self) -> None:
+        """Алиас drop_mv_distribution — модель MvideoDistribution маппится на таблицу mv_log."""
+        MvideoDistribution.__table__.drop(
+            bind=self.engine,
+            checkfirst=True,
+        )
+
+        logger.info("Таблица mv_log успешно удалена")
+
+    @retry_on_exception()
     def drop_mv_acquiring(self) -> None:
         MvideoAcquiring.__table__.drop(
             bind=self.engine,
@@ -444,13 +454,11 @@ class DbConnection:
                 date=row.date,
                 client_id=row.client_id,
                 sku=row.sku,
-                tariff_rate=row.tariff_rate,
                 quantity=row.quantity,
                 cost=row.cost,
             ).on_conflict_do_update(
                 index_elements=["date", "client_id", "sku"],
                 set_={
-                    "tariff_rate": row.tariff_rate,
                     "quantity": row.quantity,
                     "cost": row.cost,
                 },
@@ -477,13 +485,20 @@ class DbConnection:
                 date=row.date,
                 client_id=row.client_id,
                 sku=row.sku,
+                receipt_number=row.receipt_number,
                 quantity=row.quantity,
                 sum=row.sum,
                 total_sum=row.total_sum,
                 transaction_type=row.transaction_type,
                 cost=row.cost,
             ).on_conflict_do_update(
-                index_elements=["date", "client_id", "sku", "transaction_type"],
+                index_elements=[
+                    "date",
+                    "client_id",
+                    "sku",
+                    "receipt_number",
+                    "transaction_type",
+                ],
                 set_={
                     "quantity": row.quantity,
                     "sum": row.sum,

@@ -15,6 +15,22 @@ from web_driver.reports._common import (
 )
 
 
+def _receipt_to_str(val) -> str | None:
+    """
+    Приводит «Номер чека» к строке.
+    Excel хранит номер как число → pandas даёт float (1504106.0).
+    Если это целое — отрезаем .0, чтобы в БД лёг '1504106', а не '1504106.0'.
+    """
+    if val is None:
+        return None
+    if isinstance(val, float):
+        if val.is_integer():
+            return str(int(val))
+        return str(val)
+    s = str(val).strip()
+    return s or None
+
+
 class AcquiringReport(BaseReport):
     """Парсит xlsx 'Эквайринг' и пишет в mv_acquiring."""
 
@@ -35,6 +51,7 @@ class AcquiringReport(BaseReport):
     COL_NAMES: dict[str, str] = {
         "sku":              "Артикул Мвидео",
         "date":             "Дата чека",
+        "receipt_number":   "Номер чека",
         "quantity":         "Количество единиц",
         "sum":              "Стоимость товара, руб. с учетом НДС",
         "total_sum":        "Сумма по товарам, руб. с учетом НДС",
@@ -87,6 +104,7 @@ class AcquiringReport(BaseReport):
                 date=row_date,
                 client_id=self.market.client_id,
                 sku=sku,
+                receipt_number=_receipt_to_str(cell("receipt_number")),
                 quantity=to_int(cell("quantity")),
                 sum=to_float(cell("sum")),
                 total_sum=to_float(cell("total_sum")),

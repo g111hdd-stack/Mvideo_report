@@ -14,6 +14,13 @@ from web_driver.reports._common import (
 )
 
 
+def _sum_optional(a, b):
+    """Сумма с поддержкой None: None трактуется как 0, но (None + None) → None."""
+    if a is None and b is None:
+        return None
+    return (a or 0) + (b or 0)
+
+
 class DistributionReport(BaseReport):
     """Парсит xlsx 'Распределение оплат' и пишет в mv_distribution."""
 
@@ -34,7 +41,6 @@ class DistributionReport(BaseReport):
     COL_NAMES: dict[str, str] = {
         "sku":         "Артикул Мвидео",
         "date":        "Дата чека",
-        "tariff_rate": "Ставка по тарифу (руб., с учетом НДС)",
         "quantity":    "Количество доставленных единиц",
         "cost":        "Сумма к оплате с учетом тарификации (руб., с учетом НДС)",
     }
@@ -84,7 +90,6 @@ class DistributionReport(BaseReport):
                 date=row_date,
                 client_id=self.market.client_id,
                 sku=sku,
-                tariff_rate=to_float(cell("tariff_rate")),
                 quantity=to_int(cell("quantity")),
                 cost=to_float(cell("cost")),
             ))
@@ -93,16 +98,50 @@ class DistributionReport(BaseReport):
         return rows_data
 
     def parse_and_save(self, file_path: str) -> int:
-        """Парсит файл и пишет в БД. Возвращает количество записанных строк."""
+        """
+        Парсит файл, агрегирует по (date, client_id, sku) с суммированием
+        quantity и cost, и пишет в БД. Возвращает количество записанных строк.
+        """
         try:
             rows = self.parse_xlsx(file_path)
         except Exception as e:
             self._error(f"ошибка парсинга {self.LABEL}: {e}")
             return 0
         if rows and self.db_arris is not None:
+            rows = self._aggregate_rows(rows)
             try:
                 self.db_arris.add_mvideo_distributions(rows)
             except Exception as e:
                 self._error(f"ошибка записи {self.LABEL} в БД: {e}")
                 return 0
         return len(rows)
+
+    def _aggregate_rows(
+            self,
+            rows: list[DataMvideoDistribution],
+    ) -> list[DataMvideoDistribution]:
+        """
+        Группирует строки по ключу (date, client_id, sku) и суммирует
+        quantity и cost.
+
+        None при суммировании трактуется как 0; если все слагаемые None — итог None.
+        """
+        grouped: dict[tuple, DataMvideoDistribution] = {}
+
+        for r in rows:
+            key = (r.date, r.client_id, r.sku)
+            existing = grouped.get(key)
+            if existing is None:
+                grouped[key] = r
+                continue
+
+            existing.quantity = _sum_optional(existing.quantity, r.quantity)
+            existing.cost = _sum_optional(existing.cost, r.cost)
+
+        result = list(grouped.values())
+        if len(result) != len(rows):
+            self._info(
+                f"{self.LABEL}: агрегация {len(rows)} → {len(result)} строк "
+                f"(сумма quantity/cost по (date, client_id, sku))"
+            )
+        return result

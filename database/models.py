@@ -238,7 +238,6 @@ class MvideoDistribution(Base):
     )
     sku = Column(String(length=255), nullable=False)
 
-    tariff_rate = Column(Float, nullable=True)
     quantity = Column(BigInteger, nullable=True)
     cost = Column(Float, nullable=True)
 
@@ -269,6 +268,7 @@ class MvideoAcquiring(Base):
         nullable=False,
     )
     sku = Column(String(length=255), nullable=False)
+    receipt_number = Column(String(length=255), nullable=True)
 
     quantity = Column(BigInteger, nullable=True)
     sum = Column(Float, nullable=True)
@@ -281,6 +281,7 @@ class MvideoAcquiring(Base):
             'date',
             'client_id',
             'sku',
+            'receipt_number',
             'transaction_type',
             name='mv_acquiring_unique',
         ),

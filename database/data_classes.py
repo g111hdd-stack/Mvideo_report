@@ -58,7 +58,6 @@ class DataMvideoDistribution:
     date: date
     client_id: str
     sku: str
-    tariff_rate: Optional[float]
     quantity: Optional[int]
     cost: Optional[float]
 
@@ -68,6 +67,7 @@ class DataMvideoAcquiring:
     date: date
     client_id: str
     sku: str
+    receipt_number: Optional[str]
     quantity: Optional[int]
     sum: Optional[float]
     total_sum: Optional[float]
