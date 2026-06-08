@@ -73,7 +73,7 @@ class MvideoApi:
 
         try:
             r = session.request(method, url, params=params, json=json_body, timeout=60)
-            self._info(f"{method} {r.url} status={r.status_code}")
+            # self._info(f"{method} {r.url} status={r.status_code}")
             if r.status_code != 200:
                 self._error(f"ошибка API {url} {r.status_code}: {r.text[:1000]}")
                 return None

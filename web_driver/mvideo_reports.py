@@ -421,7 +421,7 @@ class MvideoReports:
             download_dir: str = "report",
             start_date: date_type | None = None,
             end_date: date_type | None = None,
-            poll_interval_s: int = 15,
+            poll_interval_s: int = 45,
             max_wait_s: int = 600,
     ) -> str | None:
         """
@@ -468,7 +468,7 @@ class MvideoReports:
                 json=body,
                 timeout=60,
             )
-            self._info(f"POST {r.url} status={r.status_code}")
+            # self._info(f"POST {r.url} status={r.status_code}")
             if r.status_code != 200:
                 self._error(
                     f"{report.LABEL}: триггер не прошёл, "
@@ -544,18 +544,18 @@ class MvideoReports:
                         continue
                     status = task.get("status")
                     if status == "FINISH":
-                        self._info(
-                            f"{label}: ✓ готов "
-                            f"(task_id={task.get('id')}, name={task.get('name')})"
-                        )
+                        # self._info(
+                        #     f"{label}: ✓ готов "
+                        #     f"(task_id={task.get('id')}, name={task.get('name')})"
+                        # )
                         return task
                     if status == "NO_DATA":
                         self._info(f"{label}: ⊘ NO_DATA, пропускаю")
                         return None
                     # PROCESSING/ADD/прочее — продолжаем ждать
-                    self._info(
-                        f"{label}: статус '{status}', ждём ещё {poll_interval_s}с"
-                    )
+                    # self._info(
+                    #     f"{label}: статус '{status}', ждём ещё {poll_interval_s}с"
+                    # )
                     break
             time.sleep(poll_interval_s)
 
@@ -691,7 +691,7 @@ class MvideoReports:
     ) -> dict | list | None:
         try:
             r = session.get(url, params=params, timeout=60)
-            self._info(f"GET {r.url} status={r.status_code}")
+            # self._info(f"GET {r.url} status={r.status_code}")
             if r.status_code != 200:
                 self._error(f"ошибка API {url} {r.status_code}: {r.text[:500]}")
                 return None
@@ -712,7 +712,7 @@ class MvideoReports:
     ) -> bool:
         try:
             r = session.post(url, params=params, json=json_body or {}, timeout=60)
-            self._info(f"POST {r.url} status={r.status_code}")
+            # self._info(f"POST {r.url} status={r.status_code}")
             if r.status_code not in (200, 201, 202, 204):
                 self._error(f"ошибка API {url} {r.status_code}: {r.text[:500]}")
                 return False
@@ -737,7 +737,7 @@ class MvideoReports:
                 headers={"Content-Type": content_type},
                 timeout=60,
             )
-            self._info(f"POST {r.url} status={r.status_code}")
+            # self._info(f"POST {r.url} status={r.status_code}")
             if r.status_code != 200:
                 self._error(f"ошибка API {url} {r.status_code}: {r.text[:500]}")
                 return None
@@ -802,7 +802,7 @@ class MvideoReports:
         url = f"{self.BASE}/api/report/task/report/{task_id}"
         try:
             r = session.get(url, timeout=120)
-            self._info(f"GET {r.url} status={r.status_code}")
+            # self._info(f"GET {r.url} status={r.status_code}")
             if r.status_code != 200:
                 self._error(f"ошибка скачивания {r.status_code}: {r.text[:500]}")
                 return None
