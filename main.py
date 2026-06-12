@@ -134,23 +134,22 @@ def main():
 
                 # === Скачивание billing-отчётов за текущий месяц ===
                 reports = MvideoReports(driver, db_arris=db_arris)
-                #
-                # # Каждый сервис качается независимо — можно
-                # комментировать/раскомментировать любую строку.
+
+                # Каждый сервис качается независимо — можно
                 reports.download_distribution_reports()
                 reports.download_storage_reports()
                 reports.download_acquiring_reports()
                 reports.download_commission_reports()
 
                 # Или одной строкой все 4 разом:
-                # reports.download_all_billing_reports()
+                reports.download_all_billing_reports()
 
                 # === Скачивание консолидированного отчёта (analytics) ===
                 reports.download_consolidated_report()
-                # reports.download_consolidated_report(
-                #     start_date=date(2026, 5, 1),
-                #     end_date=date(2026, 5, 31),
-                # )
+                reports.download_consolidated_report(
+                    start_date=date(2026, 5, 1),
+                    end_date=date(2026, 5, 31),
+                )
 
                 if KEEP_BROWSER_OPEN:
                     input("Браузер оставлен открытым. Нажмите Enter, чтобы закрыть...")

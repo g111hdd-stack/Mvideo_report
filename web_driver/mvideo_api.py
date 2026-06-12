@@ -138,7 +138,7 @@ class MvideoApi:
 
     def get_mvideo_campaigns(self):
         return self._api(
-            "GET", f"{self.BASE}/seller-api/v1/campaigns",
+            "GET", f"{self.BASE}/campaigns-app/seller-api/v1/campaigns",
             referer=f"{self.BASE}/mpa/marketing/campaigns",
         )
 
@@ -147,7 +147,7 @@ class MvideoApi:
         to_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")    # вчера
         from_date = (today - timedelta(days=7)).strftime("%Y-%m-%d")  # 7 дней назад
         return self._api(
-            "GET", f"{self.BASE}/seller-api/v1/campaigns/{campaign_id}/stats",
+            "GET", f"{self.BASE}/campaigns-app/seller-api/v1/campaigns/{campaign_id}/stats",
             referer=f"{self.BASE}/mpa/marketing/campaigns",
             params={"from_date": from_date, "to_date": to_date},
         )
