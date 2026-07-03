@@ -368,6 +368,49 @@ class DbConnection:
 
         logger.info(f"Успешно добавлено/обновлено рекламных кампаний: {len(adverts)}")
 
+    def _bulk_upsert(
+            self,
+            model,
+            values: list[dict],
+            index_elements: list[str],
+            update_cols: list[str],
+            chunk_size: int = 1000,
+    ) -> None:
+        """
+        Массовый UPSERT: один многострочный INSERT ... ON CONFLICT DO UPDATE
+        на каждую пачку строк (вместо запроса на строку).
+
+        - values: список dict'ов (по одному на строку).
+        - index_elements: колонки уникального ключа (ON CONFLICT).
+        - update_cols: какие колонки обновлять при конфликте (берутся из EXCLUDED).
+        - chunk_size: строк на один INSERT (держим ниже лимита в 65535 параметров).
+
+        Внутри одной пачки дубли по ключу запрещены Postgres'ом
+        ('cannot affect row a second time'), поэтому предварительно
+        дедуплицируем по index_elements — побеждает последняя строка
+        (та же семантика, что была у построчного execute).
+        """
+        if not values:
+            return
+
+        # Дедуп по ключу конфликта, last-wins
+        deduped: dict[tuple, dict] = {}
+        for v in values:
+            key = tuple(v[k] for k in index_elements)
+            deduped[key] = v
+        rows = list(deduped.values())
+
+        for i in range(0, len(rows), chunk_size):
+            chunk = rows[i:i + chunk_size]
+            stmt = insert(model).values(chunk)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=index_elements,
+                set_={c: stmt.excluded[c] for c in update_cols},
+            )
+            self.session.execute(stmt)
+
+        self.session.commit()
+
     @retry_on_exception()
     def add_mvideo_advert_statistics(
             self,
@@ -377,30 +420,25 @@ class DbConnection:
             logger.info("Нет статистики рекламных кампаний для записи в базу")
             return
 
-        for stat in statistics:
-            stmt = insert(MvideoAdvertStatistic).values(
-                advert_id=stat.advert_id,
-                client_id=stat.client_id,
-                sku=stat.sku,
-                date=stat.date,
-                views=stat.views,
-                clicks=stat.clicks,
-                baskets=stat.baskets,
-                orders_count=stat.orders_count,
-                sum_cost=stat.sum_cost,
-            ).on_conflict_do_update(
-                index_elements=["advert_id", "client_id", "sku", "date"],
-                set_={
-                    "views": stat.views,
-                    "clicks": stat.clicks,
-                    "baskets": stat.baskets,
-                    "orders_count": stat.orders_count,
-                    "sum_cost": stat.sum_cost,
-                },
-            )
-            self.session.execute(stmt)
-
-        self.session.commit()
+        self._bulk_upsert(
+            MvideoAdvertStatistic,
+            values=[
+                {
+                    "advert_id": s.advert_id,
+                    "client_id": s.client_id,
+                    "sku": s.sku,
+                    "date": s.date,
+                    "views": s.views,
+                    "clicks": s.clicks,
+                    "baskets": s.baskets,
+                    "orders_count": s.orders_count,
+                    "sum_cost": s.sum_cost,
+                }
+                for s in statistics
+            ],
+            index_elements=["advert_id", "client_id", "sku", "date"],
+            update_cols=["views", "clicks", "baskets", "orders_count", "sum_cost"],
+        )
 
         logger.info(
             f"Успешно добавлено/обновлено строк статистики рекламы: {len(statistics)}"
@@ -415,26 +453,23 @@ class DbConnection:
             logger.info("Нет остатков МВидео для записи в базу")
             return
 
-        for stock in stocks:
-            stmt = insert(MvideoStock).values(
-                date=stock.date,
-                client_id=stock.client_id,
-                sku=stock.sku,
-                warehouse=stock.warehouse,
-                city=stock.city,
-                quantity_warehouse=stock.quantity_warehouse,
-                cost=stock.cost,
-            ).on_conflict_do_update(
-                index_elements=["date", "client_id", "sku", "warehouse"],
-                set_={
-                    "city": stock.city,
-                    "quantity_warehouse": stock.quantity_warehouse,
-                    "cost": stock.cost,
-                },
-            )
-            self.session.execute(stmt)
-
-        self.session.commit()
+        self._bulk_upsert(
+            MvideoStock,
+            values=[
+                {
+                    "date": s.date,
+                    "client_id": s.client_id,
+                    "sku": s.sku,
+                    "warehouse": s.warehouse,
+                    "city": s.city,
+                    "quantity_warehouse": s.quantity_warehouse,
+                    "cost": s.cost,
+                }
+                for s in stocks
+            ],
+            index_elements=["date", "client_id", "sku", "warehouse"],
+            update_cols=["city", "quantity_warehouse", "cost"],
+        )
 
         logger.info(
             f"Успешно добавлено/обновлено остатков МВидео: {len(stocks)}"
@@ -449,23 +484,21 @@ class DbConnection:
             logger.info("Нет строк отчёта распределения для записи в базу")
             return
 
-        for row in rows:
-            stmt = insert(MvideoDistribution).values(
-                date=row.date,
-                client_id=row.client_id,
-                sku=row.sku,
-                quantity=row.quantity,
-                cost=row.cost,
-            ).on_conflict_do_update(
-                index_elements=["date", "client_id", "sku"],
-                set_={
-                    "quantity": row.quantity,
-                    "cost": row.cost,
-                },
-            )
-            self.session.execute(stmt)
-
-        self.session.commit()
+        self._bulk_upsert(
+            MvideoDistribution,
+            values=[
+                {
+                    "date": r.date,
+                    "client_id": r.client_id,
+                    "sku": r.sku,
+                    "quantity": r.quantity,
+                    "cost": r.cost,
+                }
+                for r in rows
+            ],
+            index_elements=["date", "client_id", "sku"],
+            update_cols=["quantity", "cost"],
+        )
 
         logger.info(
             f"Успешно добавлено/обновлено строк отчёта распределения: {len(rows)}"
@@ -480,35 +513,31 @@ class DbConnection:
             logger.info("Нет строк acquiring-отчёта для записи в базу")
             return
 
-        for row in rows:
-            stmt = insert(MvideoAcquiring).values(
-                date=row.date,
-                client_id=row.client_id,
-                sku=row.sku,
-                receipt_number=row.receipt_number,
-                quantity=row.quantity,
-                sum=row.sum,
-                total_sum=row.total_sum,
-                transaction_type=row.transaction_type,
-                cost=row.cost,
-            ).on_conflict_do_update(
-                index_elements=[
-                    "date",
-                    "client_id",
-                    "sku",
-                    "receipt_number",
-                    "transaction_type",
-                ],
-                set_={
-                    "quantity": row.quantity,
-                    "sum": row.sum,
-                    "total_sum": row.total_sum,
-                    "cost": row.cost,
-                },
-            )
-            self.session.execute(stmt)
-
-        self.session.commit()
+        self._bulk_upsert(
+            MvideoAcquiring,
+            values=[
+                {
+                    "date": r.date,
+                    "client_id": r.client_id,
+                    "sku": r.sku,
+                    "receipt_number": r.receipt_number,
+                    "quantity": r.quantity,
+                    "sum": r.sum,
+                    "total_sum": r.total_sum,
+                    "transaction_type": r.transaction_type,
+                    "cost": r.cost,
+                }
+                for r in rows
+            ],
+            index_elements=[
+                "date",
+                "client_id",
+                "sku",
+                "receipt_number",
+                "transaction_type",
+            ],
+            update_cols=["quantity", "sum", "total_sum", "cost"],
+        )
 
         logger.info(
             f"Успешно добавлено/обновлено строк acquiring-отчёта: {len(rows)}"
@@ -523,35 +552,31 @@ class DbConnection:
             logger.info("Нет строк mv_main_table для записи в базу")
             return
 
-        for row in rows:
-            stmt = insert(MvideoMainTable).values(
-                accrual_date=row.accrual_date,
-                client_id=row.client_id,
-                type_of_transaction=row.type_of_transaction,
-                sku=row.sku,
-                delivery_schema=row.delivery_schema,
-                vendor_code=row.vendor_code,
-                sale=row.sale,
-                quantities=row.quantities,
-                commission=row.commission,
-            ).on_conflict_do_update(
-                index_elements=[
-                    "accrual_date",
-                    "client_id",
-                    "type_of_transaction",
-                    "delivery_schema",
-                    "sku",
-                ],
-                set_={
-                    "vendor_code": row.vendor_code,
-                    "sale": row.sale,
-                    "quantities": row.quantities,
-                    "commission": row.commission,
-                },
-            )
-            self.session.execute(stmt)
-
-        self.session.commit()
+        self._bulk_upsert(
+            MvideoMainTable,
+            values=[
+                {
+                    "accrual_date": r.accrual_date,
+                    "client_id": r.client_id,
+                    "type_of_transaction": r.type_of_transaction,
+                    "sku": r.sku,
+                    "delivery_schema": r.delivery_schema,
+                    "vendor_code": r.vendor_code,
+                    "sale": r.sale,
+                    "quantities": r.quantities,
+                    "commission": r.commission,
+                }
+                for r in rows
+            ],
+            index_elements=[
+                "accrual_date",
+                "client_id",
+                "type_of_transaction",
+                "delivery_schema",
+                "sku",
+            ],
+            update_cols=["vendor_code", "sale", "quantities", "commission"],
+        )
 
         logger.info(
             f"Успешно добавлено/обновлено строк mv_main_table: {len(rows)}"

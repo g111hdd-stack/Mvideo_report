@@ -32,7 +32,7 @@ PERIOD_DATE: date = date(2026, 4, 30)
 # Папки с локальными xlsx-файлами по client_id
 # Ключ — client_id (из таблицы markets), значение — путь к папке
 LOCAL_DIRS: dict[str, str] = {
-    "K000074004": r"C:\Users\Witcherald\PycharmProjects\Mvideo_report\report\Мкртчян Х.М\2026-06-01",
+    "K000071171": r"C:\Users\Witcherald\PycharmProjects\Mvideo_report\report\Бурчян Г.С\2026-04-01",
     # "K000073787" "Лебедев М.С."
     # "K000071171" "Бурчян Г.С"
     # "K000074004"    Мкртчян Х.М.

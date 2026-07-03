@@ -2,7 +2,7 @@
 MvideoReports — координатор отчётов МВидео.
 
 Делает три вещи:
-1. Скачивает billing-отчёты (DISTRIBUTION/STORAGE/ACQUIRING/COMMISSION) — общий
+1. Скачивает billing-отчёты (DISTRIBUTION/STORAGE/ACQUIRING) — общий
    многошаговый flow: POST на формирование → polling task/search → GET готового xlsx.
 2. Скачивает консолидированный отчёт (analytics — POST + polling + GET).
 3. Парсит локальную папку с уже скачанными xlsx и пишет в БД.
@@ -195,49 +195,6 @@ class MvideoReports:
             max_wait_s=max_wait_s,
         )
 
-    def download_commission_reports(
-            self,
-            download_dir: str = "report",
-            poll_interval_s: int = 30,
-            max_wait_s: int = 360,
-    ) -> list[str]:
-        """
-        Скачивает COMMISSION-отчёты за все периоды OPEN/ACCUMULATING.
-        Парсер не подключён — xlsx только сохраняется на диск.
-        """
-        session = self._build_session(f"{self.BASE}/mpa/billing/reports/commission")
-        if session is None:
-            return []
-        periods = self._fetch_periods_commission(session)
-        return self._download_periods(
-            session,
-            periods=periods,
-            service_type="COMMISSION",
-            task_type="BILLING_SUPPLIER_COMMISSION",
-            label="commission",
-            download_dir=download_dir,
-            poll_interval_s=poll_interval_s,
-            max_wait_s=max_wait_s,
-        )
-
-    def download_all_billing_reports(
-            self,
-            download_dir: str = "report",
-            poll_interval_s: int = 30,
-            max_wait_s: int = 360,
-    ) -> dict[str, list[str]]:
-        """Скачивает все billing-отчёты последовательно. Удобно вызывать из main."""
-        kwargs = dict(
-            download_dir=download_dir,
-            poll_interval_s=poll_interval_s,
-            max_wait_s=max_wait_s,
-        )
-        return {
-            "distribution": self.download_distribution_reports(**kwargs),
-            "storage":      self.download_storage_reports(**kwargs),
-            "acquiring":    self.download_acquiring_reports(**kwargs),
-            "commission":   self.download_commission_reports(**kwargs),
-        }
 
     # =====================================================================
     # Запрос списков периодов (URL/формат у каждого сервиса свой)
@@ -281,20 +238,6 @@ class MvideoReports:
         data = self._http_post_json(
             session,
             f"{self.BASE}/api/v1/billing/ACQUIRING/periods",
-            json_body={
-                "page": 1, "size": 50,
-                "sorts": [{"field": "startDate", "sortType": "DESC"}],
-            },
-        )
-        if not data:
-            return []
-        return data.get("content", []) if isinstance(data, dict) else []
-
-    def _fetch_periods_commission(self, session: requests.Session) -> list[dict]:
-        """POST /api/v1/billing/COMMISSION/periods"""
-        data = self._http_post_json(
-            session,
-            f"{self.BASE}/api/v1/billing/COMMISSION/periods",
             json_body={
                 "page": 1, "size": 50,
                 "sorts": [{"field": "startDate", "sortType": "DESC"}],
