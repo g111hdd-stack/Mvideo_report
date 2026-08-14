@@ -171,7 +171,7 @@ class BrowserController:
             return
 
         logger.info(f"Авторизация {self.market.name_company}")
-        self.page.goto(url, wait_until="load", timeout=TIME_AWAITED * 4 * 1000)
+        self.page.goto(url, wait_until="load", timeout=TIME_AWAITED * 6 * 1000)
         self.check_auth()
 
     def quit(self, text: str = None):
