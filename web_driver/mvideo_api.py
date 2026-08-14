@@ -193,7 +193,13 @@ def parse_mvideo_catalog_products(
         if material is None or price is None:
             continue
 
-        commission = item.get("commission")
+        # Комиссия FBM (склад МВидео). API отдаёт процент (13.0), храним долей (0.13).
+        # Порядок: новое поле commissionFbm → устаревшее commission → commissionFbs.
+        commission = item.get("commissionFbm")
+        if commission is None:
+            commission = item.get("commission")
+        if commission is None:
+            commission = item.get("commissionFbs")
         if commission is not None:
             commission = float(commission) / 100
 
