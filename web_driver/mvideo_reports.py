@@ -14,7 +14,7 @@ import json
 import os
 import re
 import time
-from datetime import datetime, timedelta, date as date_type
+from datetime import datetime, timedelta, timezone, date as date_type
 
 import requests
 
@@ -514,7 +514,7 @@ class MvideoReports:
         """
         Проверяет, что task — свежий консолидированный:
         - name начинается на name_prefix (например '3P_main_report_')
-        - createdTime (UTC + 3h) >= request_time (MSK)
+        - createdTime (приведённое к МСК) >= request_time (MSK)
         """
         name = task.get("name") or ""
         if not name.startswith(name_prefix):
@@ -523,12 +523,8 @@ class MvideoReports:
         created_str = task.get("createdTime")
         if not created_str:
             return False
-        try:
-            created_utc = datetime.fromisoformat(created_str)
-        except ValueError:
-            return False
-        created_msk = created_utc + timedelta(hours=3)
-        if created_msk < request_time:
+        created_msk = self._created_to_msk(created_str)
+        if created_msk is None or created_msk < request_time:
             return False
 
         return True
@@ -696,12 +692,32 @@ class MvideoReports:
     # Матчинг billing-задач (используется из _download_one_billing_period)
     # =====================================================================
 
+    @staticmethod
+    def _created_to_msk(created_str: str) -> datetime | None:
+        """
+        createdTime из API → naive-datetime в МСК (сравнимо с get_moscow_time()).
+
+        Поддерживает оба формата, которые отдаёт МВидео:
+        - со смещением ('2026-09-25T03:20:01+00:00' или 'Z') — aware →
+          переводим в МСК и убираем tzinfo;
+        - без смещения ('2026-09-25T03:20:01') — считаем UTC → +3ч
+          (старое поведение).
+        Возвращает None, если строка не парсится.
+        """
+        try:
+            dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if dt.tzinfo is not None:
+            return dt.astimezone(timezone(timedelta(hours=3))).replace(tzinfo=None)
+        return dt + timedelta(hours=3)
+
     def _task_matches(self, task: dict, start_date: str, request_time: datetime) -> bool:
         """
         Проверяет, что task — наш свежий:
         - supplierCode == client_id
         - filter.date == start_date
-        - createdTime (UTC) + 3h >= request_time (MSK)
+        - createdTime (приведённое к МСК) >= request_time (MSK)
         """
         if task.get("supplierCode") != self.market.client_id:
             return False
@@ -717,12 +733,8 @@ class MvideoReports:
         created_str = task.get("createdTime")
         if not created_str:
             return False
-        try:
-            created_utc = datetime.fromisoformat(created_str)
-        except ValueError:
-            return False
-        created_msk = created_utc + timedelta(hours=3)
-        if created_msk < request_time:
+        created_msk = self._created_to_msk(created_str)
+        if created_msk is None or created_msk < request_time:
             return False
 
         return True

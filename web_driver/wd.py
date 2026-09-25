@@ -87,7 +87,7 @@ class BrowserController:
         # Persistent context = профиль на диск (аналог -profile в Firefox)
         self.context = self._pw.chromium.launch_persistent_context(
             user_data_dir=self.profile_path,
-            headless=True,
+            headless=False,
             proxy=proxy_cfg,
             locale="ru-RU",
             no_viewport=True,  # ближе к реальному браузеру
@@ -171,7 +171,8 @@ class BrowserController:
             return
 
         logger.info(f"Авторизация {self.market.name_company}")
-        self.page.goto(url, wait_until="load", timeout=TIME_AWAITED * 6 * 1000)
+        # 90 с — запас для медленных прокси (полная загрузка страницы входа)
+        self.page.goto(url, wait_until="load", timeout=90_000)
         self.check_auth()
 
     def quit(self, text: str = None):
