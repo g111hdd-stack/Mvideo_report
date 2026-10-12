@@ -375,6 +375,7 @@ class DbConnection:
             index_elements: list[str],
             update_cols: list[str],
             chunk_size: int = 1000,
+            set_fn=None,
     ) -> None:
         """
         Массовый UPSERT: один многострочный INSERT ... ON CONFLICT DO UPDATE
@@ -384,6 +385,8 @@ class DbConnection:
         - index_elements: колонки уникального ключа (ON CONFLICT).
         - update_cols: какие колонки обновлять при конфликте (берутся из EXCLUDED).
         - chunk_size: строк на один INSERT (держим ниже лимита в 65535 параметров).
+        - set_fn: опционально, fn(stmt) -> {колонка: SQL-выражение}; дополняет/
+          переопределяет set_ для колонок с нестандартным правилом обновления.
 
         Внутри одной пачки дубли по ключу запрещены Postgres'ом
         ('cannot affect row a second time'), поэтому предварительно
@@ -403,9 +406,12 @@ class DbConnection:
         for i in range(0, len(rows), chunk_size):
             chunk = rows[i:i + chunk_size]
             stmt = insert(model).values(chunk)
+            set_ = {c: stmt.excluded[c] for c in update_cols}
+            if set_fn is not None:
+                set_.update(set_fn(stmt))
             stmt = stmt.on_conflict_do_update(
                 index_elements=index_elements,
-                set_={c: stmt.excluded[c] for c in update_cols},
+                set_=set_,
             )
             self.session.execute(stmt)
 
@@ -565,6 +571,7 @@ class DbConnection:
                     "sale": r.sale,
                     "quantities": r.quantities,
                     "commission": r.commission,
+                    "commission_rate": r.commission_rate,
                 }
                 for r in rows
             ],
@@ -575,10 +582,28 @@ class DbConnection:
                 "delivery_schema",
                 "sku",
             ],
-            update_cols=["vendor_code", "sale", "quantities", "commission"],
+            update_cols=["vendor_code", "sale", "quantities"],
+            set_fn=self._main_table_commission_set,
         )
 
         logger.info(
             f"Успешно добавлено/обновлено строк mv_main_table: {len(rows)}"
         )
+
+    @staticmethod
+    def _main_table_commission_set(stmt) -> dict:
+        """
+        Правило UPSERT для комиссии в mv_main_table (ON CONFLICT DO UPDATE):
+        - commission_rate: сохраняем ставку, уже зафиксированную в строке;
+          новую (из каталога) берём только если ставки ещё не было (NULL).
+        - commission: всегда новый sale * зафиксированная ставка — при изменении
+          sale комиссия остаётся согласованной, но считается по СТАРОЙ ставке.
+        Благодаря этому повышение тарифов не пересчитывает прошлые месяцы.
+        """
+        existing_rate = MvideoMainTable.__table__.c.commission_rate
+        rate = f.coalesce(existing_rate, stmt.excluded["commission_rate"])
+        return {
+            "commission_rate": rate,
+            "commission": f.round(stmt.excluded["sale"] * rate, 2),
+        }
 

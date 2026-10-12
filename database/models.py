@@ -319,7 +319,11 @@ class MvideoMainTable(Base):
 
     sale = Column(Numeric(14, 2), nullable=True)             # сумма продаж
     quantities = Column(BigInteger, nullable=True)           # количество продаж
-    commission = Column(Numeric(14, 2), nullable=True)       # sale * commission из mv_card_product
+    commission = Column(Numeric(14, 2), nullable=True)       # sale * commission_rate
+    # Ставка комиссии, зафиксированная при первой записи строки (0.13 = 13%).
+    # При повторных UPSERT не перезаписывается — прошлые месяцы не пересчитываются
+    # по новым тарифам; commission = sale * commission_rate пересчитывается при изменении sale.
+    commission_rate = Column(Numeric(8, 4), nullable=True)
 
     __table_args__ = (
         UniqueConstraint(

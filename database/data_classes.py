@@ -85,4 +85,5 @@ class DataMvideoMainTable:
     vendor_code: Optional[str]       # подтягивается из mv_card_product
     sale: Optional[float]            # сумма продаж
     quantities: Optional[int]        # количество продаж
-    commission: Optional[float]      # sale * commission из mv_card_product
+    commission: Optional[float]      # sale * commission_rate
+    commission_rate: Optional[float] = None  # ставка из mv_card_product на момент загрузки (0.13 = 13%)

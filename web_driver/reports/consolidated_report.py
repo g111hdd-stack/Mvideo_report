@@ -245,6 +245,7 @@ class ConsolidatedReport(BaseReport):
                 continue
             vendor_code, commission_rate = info
             r.vendor_code = vendor_code
+            r.commission_rate = commission_rate
             if commission_rate is not None and r.sale is not None:
                 r.commission = round(r.sale * commission_rate, 2)
 
